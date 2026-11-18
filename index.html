@@ -104,7 +104,8 @@ td.n,th.n{text-align:right}
 tr.void td{opacity:.45;text-decoration:line-through}
 .mx td.cell{text-align:right;font-family:var(--f-num);min-width:96px}
 .mx td.cell small{display:block;font-size:11px}
-.mx td.cell.bad{background:var(--bad-soft)} .mx td.cell.ok small{color:var(--ok)} .mx td.cell.bad small{color:var(--bad)}
+.mx td.cell.bad{background:var(--bad-soft)}
+.mx td.cell small.pcs{color:var(--ink);font-weight:600;margin-top:2px} .mx td.cell.ok small{color:var(--ok)} .mx td.cell.bad small{color:var(--bad)}
 .mx th.cp{text-align:right;white-space:normal;min-width:96px;line-height:1.25}
 .mx tfoot td{font-weight:600;background:var(--bg)}
 .up{color:var(--ok)} .down{color:var(--bad)}
@@ -224,9 +225,11 @@ tr.void td{opacity:.45;text-decoration:line-through}
   <div class="card">
     <div class="toolbar">
       <input id="trkLot" placeholder="ค้นหา Lot No." aria-label="Lot No.">
+      <button class="btn pri" id="trkScan" type="button">สแกน QR</button>
       <button class="btn pri" id="trkGo" type="button">แสดง</button>
       <button class="btn" id="trkRefresh" type="button">รีเฟรช</button>
     </div>
+    <div class="hint" id="trkHint"></div>
     <div id="trkOut"><div class="empty">ใส่ Lot No. แล้วกดแสดง หรือเลือกจากแท็บ "Lot ล่าสุด"</div></div>
   </div>
 </section>
@@ -235,6 +238,7 @@ tr.void td{opacity:.45;text-decoration:line-through}
   <div class="card">
     <div class="toolbar">
       <input id="allFilter" placeholder="กรองตาม Lot / Model / เครื่อง" aria-label="กรอง">
+      <button class="btn pri" id="allScan" type="button">สแกน QR</button>
       <select id="allFlag" aria-label="สถานะ" style="max-width:200px">
         <option value="">ทุกสถานะ</option>
         <option value="bad">เฉพาะที่น้ำหนักผิดปกติ</option>
@@ -242,6 +246,7 @@ tr.void td{opacity:.45;text-decoration:line-through}
       <button class="btn" id="allRefresh" type="button">รีเฟรช</button>
       <a class="btn" id="sheetLink" href="#" target="_blank" rel="noopener" hidden>เปิด Google Sheet</a>
     </div>
+    <div class="hint" id="allHint"></div>
     <div id="allOut"><div class="empty">กำลังโหลด…</div></div>
   </div>
 </section>
@@ -373,20 +378,23 @@ function renderLot(doc, target, opts={}){
   if(rt) h+=`<div class="flow">${rt.map(s=>`<span class="f">${esc(s[1])}</span>`).join("→")}</div>`;
   if(!A.live.length){ target.innerHTML=h+'<div class="empty">ยังไม่มีการชั่ง</div>'; return; }
   // matrix
-  h+=`<h3>ตารางเทียบน้ำหนัก (kg) ต่อ Box</h3><div class="tblwrap"><table class="mx"><thead><tr><th>Box</th>${used.map(cp=>`<th class="cp">${esc(cp.wc)}<br><span style="font-weight:500">${ptShort(cp.sec,cp.pt)}</span></th>`).join("")}</tr></thead><tbody>`;
-  const tot=used.map(()=>({kg:0,n:0}));
+  h+=`<h3>ตารางเทียบน้ำหนัก (kg) และจำนวนชิ้น ต่อ Box</h3><p class="hint" style="margin:-4px 0 8px">≈ = จำนวนชิ้นประมาณจากน้ำหนัก (เมื่อไม่ได้ใส่จำนวน)</p><div class="tblwrap"><table class="mx"><thead><tr><th>Box</th>${used.map(cp=>`<th class="cp">${esc(cp.wc)}<br><span style="font-weight:500">${ptShort(cp.sec,cp.pt)}</span></th>`).join("")}</tr></thead><tbody>`;
+  const tot=used.map(()=>({kg:0,n:0,pcs:0,est:false}));
   A.boxes.forEach(b=>{
     h+=`<tr><td><b>${esc(b)}</b></td>`;
     used.forEach((cp,j)=>{
       const rs=A.byBox[b].filter(r=>r.op===cp.op&&r.pt===cp.pt);
       if(!rs.length){ h+='<td class="cell">—</td>'; return; }
       const r=rs[rs.length-1], c=A.calc[r.id]; tot[j].kg+=r.kg; tot[j].n++;
+      const pcs=r.qty?r.qty:(c.est?Math.round(c.est):null);
+      if(pcs){ tot[j].pcs+=pcs; if(!r.qty) tot[j].est=true; }
       const cls=c.prev?(c.bad?"bad":"ok"):"";
-      h+=`<td class="cell ${cls}" title="${esc(r.mc)} · ${esc(r.opId)} · ${nowTxt(r.ts)}">${fmt(r.kg)}${c.prev?`<small>${sgn(c.dKg)} (${sgn(c.dPct,2)}%)</small>`:"<small>&nbsp;</small>"}</td>`;
+      const pcsTxt=pcs?`<small class="pcs">${r.qty?"":"≈"}${fmtI(pcs)} ชิ้น${c.prev&&c.dPcs!=null&&Math.round(c.dPcs)!==0?` (${c.dPcs>0?"+":""}${fmtI(c.dPcs)})`:""}</small>`:'<small class="pcs">— ชิ้น</small>';
+      h+=`<td class="cell ${cls}" title="${esc(r.mc)} · ${esc(r.opId)} · ${nowTxt(r.ts)}">${fmt(r.kg)} kg${c.prev?`<small>${sgn(c.dKg)} (${sgn(c.dPct,2)}%)</small>`:"<small>จุดแรก</small>"}${pcsTxt}</td>`;
     });
     h+="</tr>";
   });
-  h+=`</tbody><tfoot><tr><td>รวม</td>${tot.map(t=>`<td class="cell">${fmt(t.kg)}<small>${t.n} Box</small></td>`).join("")}</tr></tfoot></table></div>`;
+  h+=`</tbody><tfoot><tr><td>รวม</td>${tot.map(t=>`<td class="cell">${fmt(t.kg)} kg<small>${t.n} Box</small><small class="pcs">${t.pcs?(t.est?"≈":"")+fmtI(t.pcs)+" ชิ้น":"— ชิ้น"}</small></td>`).join("")}</tr></tfoot></table></div>`;
   // detail
   const rows=[...A.all].sort((a,b)=>b.ts-a.ts);
   h+=`<h3 style="margin-top:16px">ประวัติการชั่งทั้งหมด</h3><div class="tblwrap"><table><thead><tr><th>เวลา</th><th>Box</th><th>กระบวนการ</th><th>จุดชั่ง</th><th>เครื่อง</th><th>พนักงาน</th><th class="n">ชิ้น</th><th class="n">kg</th><th class="n">ต่างจากก่อนหน้า</th><th class="n">ชิ้น (ประมาณ)</th><th>หมายเหตุ</th><th></th></tr></thead><tbody>`;
@@ -537,6 +545,7 @@ $("#mYes").onclick=async()=>{
 };
 
 /* ---------- track ---------- */
+function lotFromInput(v){ v=String(v||"").trim(); return /[,;|\t]/.test(v)?parseQR(v).lot:lotKey(v); }
 function openTrack(lot){ $("#trkLot").value=lot; showView("trk"); trackGo(); }
 async function loadTrk(k){
   try{
@@ -546,7 +555,7 @@ async function loadTrk(k){
   }catch(e){ $("#trkOut").innerHTML='<div class="msg bad">อ่านข้อมูลไม่ได้: '+esc(errTxt(e))+'</div>'; }
 }
 function trackGo(){
-  const k=lotKey($("#trkLot").value); if(!k) return;
+  const k=lotFromInput($("#trkLot").value); if(!k) return; $("#trkLot").value=k;
   trkLotId=k; trkDoc=null; clearInterval(trkPoll);
   $("#trkOut").innerHTML='<div class="empty">กำลังโหลด…</div>';
   loadTrk(k); trkPoll=setInterval(()=>{ if(!document.hidden&&$("#v-trk").classList.contains("on")) loadTrk(k); },20000);
@@ -578,7 +587,8 @@ function renderAll(){
       <div class="m">ล่าสุด: ${last?esc(last.wc)+" "+ptShort(last.sec,last.pt)+" · "+nowTxt(last.ts):"-"}</div>
       ${A.flags?`<span class="chip bad">ผิดปกติ ${A.flags} จุด</span>`:'<span class="chip ok">ปกติ</span>'}</button>`;}).join("")+"</div>";
 }
-$("#allFilter").addEventListener("input",renderAll); $("#allFlag").addEventListener("change",renderAll);
+$("#allFilter").addEventListener("input",renderAll);
+$("#allFilter").addEventListener("keydown",e=>{ if(e.key==="Enter"){ e.preventDefault(); onScanned($("#allFilter").value,"all"); } }); $("#allFlag").addEventListener("change",renderAll);
 $("#allRefresh").onclick=loadAll;
 
 /* ---------- QR scan: live camera from label, photo as fallback, scanner gun via Enter ---------- */
@@ -643,6 +653,7 @@ async function openScanner(){
   scanLoop();
 }
 function cameraFallback(why){
+  if(scanTarget!=="rec"){ const h=$(scanTarget==="trk"?"#trkHint":"#allHint"); h.innerHTML=esc(why)+' — <label for="f-qr" style="text-decoration:underline;cursor:pointer">ถ่ายรูป QR แทน</label> หรือพิมพ์ Lot No.'; return; }
   $("#qrHint").innerHTML=esc(why)+' — <label for="f-qr" style="text-decoration:underline;cursor:pointer">ถ่ายรูป QR แทน</label> หรือพิมพ์ Lot No.';
 }
 async function scanLoop(){
@@ -660,7 +671,7 @@ async function scanLoop(){
         const r=jsQR(d.data,scanCanvas.width,scanCanvas.height,{inversionAttempts:"dontInvert"}); if(r) text=r.data;
       }
     }catch(e){}
-    if(text){ closeScanner(); applyScan(text); return; }
+    if(text){ closeScanner(); onScanned(text,scanTarget); return; }
   }
   scanTimer=setTimeout(scanLoop,150);
 }
@@ -669,7 +680,19 @@ function closeScanner(){
   if(scanStream){ scanStream.getTracks().forEach(t=>t.stop()); scanStream=null; }
   $("#scanVideo").srcObject=null; $("#scanner").classList.remove("on");
 }
-$("#scanBtn").onclick=openScanner;
+let scanTarget="rec";
+function onScanned(text,target){
+  if(target==="trk"){ $("#trkLot").value=parseQR(text).lot; $("#trkHint").textContent=""; showView("trk"); trackGo(); return; }
+  if(target==="all"){
+    const lot=parseQR(text).lot; $("#allFilter").value=lot; $("#allHint").textContent=""; renderAll();
+    if(!allLots.some(d=>lotKey(d.lot)===lot)) openTrack(lot);   // ไม่อยู่ในรายการล่าสุด -> ค้นทั้งหมด
+    return;
+  }
+  applyScan(text);
+}
+$("#scanBtn").onclick=()=>{ scanTarget="rec"; openScanner(); };
+$("#trkScan").onclick=()=>{ scanTarget="trk"; openScanner(); };
+$("#allScan").onclick=()=>{ scanTarget="all"; openScanner(); };
 $("#scanClose").onclick=closeScanner;
 $("#torchBtn").onclick=async()=>{ try{ torchOn=!torchOn; await scanStream.getVideoTracks()[0].applyConstraints({advanced:[{torch:torchOn}]}); }catch(e){} };
 document.addEventListener("visibilitychange",()=>{ if(document.hidden) closeScanner(); });
@@ -688,7 +711,7 @@ $("#f-qr").addEventListener("change",async e=>{
     const d=x.getImageData(0,0,c.width,c.height);
     const r=window.jsQR?jsQR(d.data,c.width,c.height,{inversionAttempts:"attemptBoth"}):null;
     if(!r){ hint.textContent="อ่าน QR ไม่ได้ ถ่ายใหม่ให้ QR อยู่กลางภาพและชัด หรือพิมพ์ Lot No. เอง"; }
-    else applyScan(r.data);
+    else onScanned(r.data,scanTarget);
   }catch(err){ hint.textContent="อ่านรูปไม่ได้ ลองถ่ายใหม่"; }
   e.target.value="";
 });
