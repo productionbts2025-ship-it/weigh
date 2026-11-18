@@ -51,7 +51,10 @@ nav.tabs button[aria-selected="true"]{color:var(--accent);border-bottom-color:va
 main{max-width:1280px;margin:0 auto;padding:16px}
 .view{display:none} .view.on{display:block}
 .grid2{display:grid;grid-template-columns:minmax(320px,440px) 1fr;gap:16px;align-items:start}
-@media (max-width:900px){.grid2{grid-template-columns:1fr}}
+@media (max-width:900px){.grid2{grid-template-columns:minmax(0,1fr)}}
+.grid2>*,.card,.view,main{min-width:0}
+html,body{overflow-x:hidden}
+@media (max-width:600px){main{padding:10px}.card{padding:12px}th,td{padding:6px 8px;font-size:13px}}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px}
 .card h2{margin:0 0 12px;font-size:17px;text-wrap:balance}
 .card h3{margin:0 0 8px;font-size:15px}
@@ -197,7 +200,8 @@ tr.void td{opacity:.45;text-decoration:line-through}
       </div>
       <div class="fld">
         <label for="f-qty">จำนวน (ชิ้น)</label>
-        <input id="f-qty" class="big" inputmode="numeric" placeholder="10000">
+        <input id="f-qty" class="big" inputmode="numeric" placeholder="ใส่จำนวน">
+        <span class="hint" id="qtyHint"></span>
       </div>
     </div>
     <div class="fld">
@@ -257,7 +261,7 @@ tr.void td{opacity:.45;text-decoration:line-through}
   <div class="card">
     <h2 id="kTitle">ใส่รหัสเข้าใช้งาน</h2>
     <p class="hint" style="font-size:14px">ขอรหัสจากหัวหน้างาน ใส่ครั้งเดียว เครื่องนี้จะจำไว้</p>
-    <div class="fld"><label for="kInput">รหัส</label><input id="kInput" type="password" autocomplete="off"></div>
+    <div class="fld"><label for="kInput">รหัส</label><input id="kInput" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"></div>
     <button class="btn pri wide" id="kSave" type="button">ตกลง</button>
   </div>
 </div>
@@ -299,7 +303,7 @@ function rpcRaw(action,p){
   return req.then(r=>r.json()).catch(()=>{ throw new Error("เชื่อมต่อ Google Sheet ไม่ได้ ตรวจอินเทอร์เน็ต"); });
 }
 async function rpc(action,p={}){
-  const j=await rpcRaw(action,{...p,key:ls.get("appKey")||""});
+  const j=await rpcRaw(action,{...p,key:getKey()});
   if(!j||!j.ok){ const m=(j&&j.error)||"ผิดพลาด"; if(m.indexOf("รหัสเข้าใช้งาน")>=0) askKey(); throw new Error(m); }
   return j.data;
 }
@@ -310,6 +314,8 @@ const api=(fn,...a)=>{
   if(fn==="voidRecord") return rpc(fn,{id:a[0],reason:a[1]});
   return rpc(fn);
 };
+let memKey="";
+function getKey(){ return memKey || ls.get("appKey") || ""; }
 function askKey(){ $("#kInput").value=""; $("#keyModal").classList.add("on"); setTimeout(()=>$("#kInput").focus(),50); }
 const errTxt=e=>(e&&e.message)?e.message.replace(/^Exception:\s*/,""):String(e);
 
@@ -427,6 +433,20 @@ function pickStep(op,pt){
   $("#f-mc").value=lastMc||mcDefault;
   renderSteps();
 }
+/* ---------- จำนวนชิ้น: ใช้ค่าจาก Box เดิม > QR > STD/Box แก้ได้เสมอ ---------- */
+let qtyAuto=true, lastQrQty=null;
+function stdOf(m){ const v=(M.std||{})[String(m||"").trim().toUpperCase()]; return v>0?v:null; }
+function fillQty(){
+  if(!(qtyAuto||!$("#f-qty").value)){ qtyNote(); return; }
+  const v=boxBaseQty()||lastQrQty||stdOf($("#f-model").value);
+  $("#f-qty").value=v?v:""; qtyAuto=true; qtyNote();
+}
+function qtyNote(){
+  const std=stdOf($("#f-model").value), q=parseInt(String($("#f-qty").value).replace(/,/g,""),10), el=$("#qtyHint");
+  if(!$("#f-model").value){ el.innerHTML=""; return; }
+  if(!std){ el.innerHTML="ไม่มีค่า STD/Box ของ Model นี้ ใส่จำนวนเอง"; return; }
+  el.innerHTML="STD/Box <b class=\"num\">"+fmtI(std)+"</b> ชิ้น"+(q&&q!==std?' · <span class="chip warn">Box เศษ</span>':"")+" · แก้ได้";
+}
 function boxBaseQty(){
   const box=$("#f-box").value.trim(); if(!lotDoc||!box) return null;
   const A=analyse(lotDoc); const l=A.byBox[box]; if(!l) return null;
@@ -459,6 +479,7 @@ async function loadLot(k){
     const d=await api("getLot",k);
     if(curLot!==k) return;
     lotDoc=d; if(d&&d.tolPct) tolPct=d.tolPct;
+    setTimeout(fillQty,0);
     if(lotDoc&&lotDoc.model&&!$("#f-model").value){ $("#f-model").value=lotDoc.model; }
     renderLot(lotDoc,$("#recLot")); renderSteps(); checkModel(); setConn(true);
   }catch(e){ setConn(false); if(curLot===k&&!lotDoc) $("#recLot").innerHTML='<div class="msg bad">อ่านข้อมูลไม่ได้: '+esc(errTxt(e))+'</div>'; }
@@ -491,6 +512,7 @@ async function saveRec(ev){
     msg.innerHTML=`<div class="msg ${bad?"bad":"ok"}">บันทึกแล้ว: Box ${esc(box)} · ${esc(sel.wc)} ${ptShort(sel.sec,sel.pt)} · <b class="num">${fmt(kg)} kg</b>${r.dKg!==""?` · ต่างจากก่อนหน้า ${sgn(r.dKg)} kg (${sgn(r.dPct,2)}%)`:""}${bad?"<br><b>เกินเกณฑ์ — แจ้งหัวหน้างานตรวจนับ</b>":""}</div>`;
     $("#f-kg").value=""; $("#f-note").value=""; $("#preview").innerHTML="";
     curLot=null; watchLot();
+    if(window.innerWidth<=900) setTimeout(()=>$("#saveMsg").scrollIntoView({behavior:"smooth",block:"center"}),50);
   }catch(e){
     msg.innerHTML=`<div class="msg bad">บันทึกไม่สำเร็จ: ${esc(errTxt(e))} — ลองกดบันทึกอีกครั้ง</div>`;
   }finally{ btn.disabled=false; btn.textContent="บันทึกน้ำหนัก"; }
@@ -568,7 +590,10 @@ function parseQR(text){
   const lotM=t.match(/PDR-?\d{6,}/i);
   const modM=Object.keys(M.routing).sort((a,b)=>b.length-a.length)
     .find(m=>new RegExp("(^|[^A-Z0-9])"+m.replace(/[-]/g,"\\-")+"([^A-Z0-9-]|$)","i").test(t));
-  return {raw:t, lot:(lotM?lotM[0]:t).toUpperCase(), model:modM||""};
+  const parts=t.split(/[,;|\t]+/).map(x=>x.trim()).filter(Boolean);
+  const qtyP=parts.find(x=>/^\d{1,7}$/.test(x.replace(/,/g,"")) && !(lotM&&lotM[0].includes(x)));
+  const lot=(lotM?lotM[0]:(parts[0]||t)).toUpperCase();
+  return {raw:t, lot, model:modM||"", qty:qtyP?parseInt(qtyP,10):null};
 }
 
 // สแกนป้ายใบใหม่ = เปลี่ยน Lot และล้างข้อมูลของใบเก่า (คงจุดชั่ง เครื่อง และรหัสพนักงานไว้)
@@ -579,7 +604,9 @@ function applyScan(text){
   if(isNew){ resetLabel(false); }
   $("#f-lot").value=q.lot;
   if(q.model) $("#f-model").value=q.model;
-  $("#scanInfo").innerHTML=`<div class="msg ${isNew?"info":"warn"}">${isNew?"ป้ายใหม่":"ป้ายเดิม (Lot เดิม)"}: <b class="num">${esc(q.lot)}</b>${q.model?` · Model <b>${esc(q.model)}</b>`:""}`
+  if(q.qty) lastQrQty=q.qty;
+  qtyAuto=true; fillQty();
+  $("#scanInfo").innerHTML=`<div class="msg ${isNew?"info":"warn"}">${isNew?"ป้ายใหม่":"ป้ายเดิม (Lot เดิม)"}: <b class="num">${esc(q.lot)}</b>${q.model?` · Model <b>${esc(q.model)}</b>`:""}${q.qty?` · <b class="num">${fmtI(q.qty)}</b> ชิ้น`:""}`
     +`${station?`<br>จุดชั่ง: <b>${esc(station.wc)}</b> คงไว้จากใบก่อน`:""}<br><span class="hint">ข้อมูลใน QR: ${esc(q.raw)}</span></div>`;
   $("#qrHint").textContent="";
   try{ navigator.vibrate&&navigator.vibrate(120); }catch(e){}
@@ -589,6 +616,7 @@ function applyScan(text){
 
 // ล้างข้อมูลป้าย (ใช้เมื่อสแกนผิด)
 function resetLabel(clearInfo=true){
+  qtyAuto=true; lastQrQty=null; $("#qtyHint").innerHTML="";
   ["#f-lot","#f-model","#f-box","#f-kg","#f-qty","#f-note"].forEach(id=>$(id).value="");
   ["#preview","#saveMsg","#routeMsg"].forEach(id=>$(id).innerHTML="");
   if(clearInfo){ $("#scanInfo").innerHTML=""; $("#qrHint").textContent=""; }
@@ -666,7 +694,7 @@ $("#f-qr").addEventListener("change",async e=>{
 });
 
 // รหัสเข้าใช้งาน
-$("#kSave").onclick=()=>{ ls.set("appKey",$("#kInput").value.trim()); $("#keyModal").classList.remove("on"); boot(); };
+$("#kSave").onclick=()=>{ memKey=$("#kInput").value.trim(); ls.set("appKey",memKey); $("#keyModal").classList.remove("on"); $("#routeMsg").innerHTML=""; boot(); };
 $("#kInput").addEventListener("keydown",e=>{ if(e.key==="Enter") $("#kSave").click(); });
 
 $("#f-lot").addEventListener("focus",e=>{ try{e.target.select()}catch(_){} });
@@ -684,8 +712,9 @@ function setConn(ok){ $("#dot").className="dot "+(ok?"on":"off"); $("#connTxt").
 let lotTimer=null;
 $("#f-lot").addEventListener("input",()=>{ clearTimeout(lotTimer); lotTimer=setTimeout(watchLot,600); });
 $("#f-lot").addEventListener("change",watchLot);
-$("#f-model").addEventListener("input",()=>{ sel=null; renderSteps(); checkModel(); });
-$("#f-box").addEventListener("input",()=>{ renderSteps(); const q=boxBaseQty(); if(q&&!$("#f-qty").value) $("#f-qty").value=q; });
+$("#f-model").addEventListener("input",()=>{ sel=null; renderSteps(); checkModel(); fillQty(); });
+$("#f-box").addEventListener("input",()=>{ renderSteps(); qtyAuto=true; fillQty(); });
+$("#f-qty").addEventListener("input",()=>{ qtyAuto=false; qtyNote(); });
 $("#f-kg").addEventListener("input",updatePreview);
 $("#f-opid").addEventListener("input",()=>{ const o=OPS[$("#f-opid").value.trim()]; $("#opName").textContent=o?o[1]+" · "+o[2]:($("#f-opid").value?"ไม่พบรหัสนี้ในรายชื่อ (บันทึกได้)":""); });
 $("#recForm").addEventListener("submit",saveRec);
@@ -694,7 +723,13 @@ $("#recForm").addEventListener("submit",saveRec);
 async function boot(){
   try{
     M=await api("getMaster"); tolPct=M.tolPct||1; setConn(true);
-  }catch(e){ setConn(false); $("#routeMsg").innerHTML='<div class="msg bad">โหลดข้อมูลหลักไม่ได้: '+esc(errTxt(e))+' — ตรวจว่ามีชีต Routing No., MC, Operator, Settings, Weigh_Log</div>'; return; }
+  }catch(e){ setConn(false); const m=errTxt(e);
+    if(m.indexOf("รหัสเข้าใช้งาน")>=0){
+      const k=getKey();
+      $("#routeMsg").innerHTML='<div class="msg bad"><b>ต้องใส่รหัสเข้าใช้งาน</b><br>'+(k?'รหัสที่ใส่ไว้ในเครื่องนี้ ('+k.length+' ตัวอักษร) ไม่ตรงกับช่อง B3 ในชีต Settings — ตรวจตัวพิมพ์เล็ก/ใหญ่':'เครื่องนี้ยังไม่ได้ใส่รหัส')+'<br><button class="btn pri" type="button" id="keyBtn" style="margin-top:8px">ใส่รหัส</button></div>';
+      $("#keyBtn").onclick=askKey;
+    } else $("#routeMsg").innerHTML='<div class="msg bad">โหลดข้อมูลหลักไม่ได้: '+esc(m)+'</div>';
+    return; }
   M.op.forEach(o=>OPS[o[0]]=o);
   $("#dl-model").innerHTML=Object.keys(M.routing).sort().map(m=>`<option value="${esc(m)}">`).join("");
   const mcs=new Set(M.mc.map(r=>r[0])); Object.values(M.routing).forEach(a=>a.forEach(s=>mcs.add(mcFromWc(s[1]))));
