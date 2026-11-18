@@ -1,0 +1,710 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<base target="_top">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>บันทึกชั่งน้ำหนักชิ้นงาน</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+<style>
+/* Layout: sticky top bar + tab strip; one working column on phones, form | live lot view side by side on PC. */
+:root{
+  --bg:#eef1f4; --panel:#ffffff; --ink:#17212b; --muted:#5d6b78; --line:#d5dce3;
+  --accent:#1f5fa8; --accent-ink:#ffffff; --accent-soft:#e3edf9;
+  --tag:#f2a516;
+  --ok:#1d7a46; --ok-soft:#e1f3e8; --bad:#c0362c; --bad-soft:#fbe5e3; --warn:#9a6400; --warn-soft:#fdf1d8;
+  --f-body:"IBM Plex Sans Thai",system-ui,"Leelawadee UI",Tahoma,sans-serif;
+  --f-num:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#11171d; --panel:#1a2229; --ink:#e6ebf0; --muted:#97a5b2; --line:#2c3843;
+    --accent:#5b9be6; --accent-ink:#0b1622; --accent-soft:#1d3047;
+    --ok:#4cc184; --ok-soft:#163626; --bad:#ff7a6e; --bad-soft:#3d1d1a; --warn:#f0b54a; --warn-soft:#3a2d12;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#11171d; --panel:#1a2229; --ink:#e6ebf0; --muted:#97a5b2; --line:#2c3843;
+  --accent:#5b9be6; --accent-ink:#0b1622; --accent-soft:#1d3047;
+  --ok:#4cc184; --ok-soft:#163626; --bad:#ff7a6e; --bad-soft:#3d1d1a; --warn:#f0b54a; --warn-soft:#3a2d12;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:16px;line-height:1.5}
+.num{font-family:var(--f-num);font-variant-numeric:tabular-nums}
+header.top{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px solid var(--line)}
+.topin{display:flex;align-items:center;gap:12px;padding:10px 16px;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:17px}
+.brand i{display:inline-block;width:10px;height:22px;background:var(--tag);border-radius:2px}
+.conn{margin-left:auto;font-size:13px;color:var(--muted);display:flex;align-items:center;gap:6px}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--muted)}
+.dot.on{background:var(--ok)} .dot.off{background:var(--bad)}
+nav.tabs{display:flex;gap:4px;padding:0 12px;overflow-x:auto}
+nav.tabs button{appearance:none;border:0;background:none;color:var(--muted);font:600 15px var(--f-body);padding:10px 14px;border-bottom:3px solid transparent;cursor:pointer;white-space:nowrap}
+nav.tabs button[aria-selected="true"]{color:var(--accent);border-bottom-color:var(--accent)}
+main{max-width:1280px;margin:0 auto;padding:16px}
+.view{display:none} .view.on{display:block}
+.grid2{display:grid;grid-template-columns:minmax(320px,440px) 1fr;gap:16px;align-items:start}
+@media (max-width:900px){.grid2{grid-template-columns:1fr}}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px}
+.card h2{margin:0 0 12px;font-size:17px;text-wrap:balance}
+.card h3{margin:0 0 8px;font-size:15px}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+.fld{display:flex;flex-direction:column;gap:4px;margin-bottom:10px;min-width:0}
+.fld label{font-size:13px;color:var(--muted);font-weight:600}
+input,select,textarea{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px 12px;min-height:46px;width:100%}
+input:focus,select:focus,textarea:focus,button:focus-visible{outline:3px solid var(--accent-soft);border-color:var(--accent);outline-offset:0}
+input.big{font-family:var(--f-num);font-size:28px;font-weight:600;text-align:right;min-height:62px}
+.hint{font-size:13px;color:var(--muted)}
+.btn{appearance:none;border:1px solid var(--line);background:var(--panel);color:var(--ink);font:600 15px var(--f-body);border-radius:8px;padding:10px 14px;min-height:44px;cursor:pointer}
+.btn:hover{border-color:var(--accent)}
+.btn.pri{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.btn.wide{width:100%;font-size:18px;min-height:56px}
+.btn.sm{min-height:34px;padding:4px 10px;font-size:13px}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.inline{display:flex;gap:8px;align-items:stretch}
+.inline > input{flex:1}
+.steps{display:flex;flex-direction:column;gap:6px;margin-bottom:10px}
+.step{border:1px solid var(--line);border-radius:8px;padding:8px 10px;display:grid;grid-template-columns:42px 1fr;gap:8px;align-items:center}
+.step .op{font-family:var(--f-num);font-size:13px;color:var(--muted)}
+.step .wc{font-weight:600;font-size:14px}
+.step .sec{font-size:12px;color:var(--muted);margin-left:6px;font-weight:500}
+.pts{grid-column:2;display:flex;gap:6px;flex-wrap:wrap}
+.pt{appearance:none;border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:999px;padding:5px 12px;font:500 13px var(--f-body);cursor:pointer;display:flex;align-items:center;gap:6px}
+.pt.done{border-color:var(--ok);color:var(--ok)}
+.pt.done::before{content:"✓"}
+.pt.sel{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.pt.next:not(.sel){border-color:var(--tag);border-style:dashed}
+.msg{border-radius:8px;padding:10px 12px;font-size:14px;margin:10px 0}
+.msg.ok{background:var(--ok-soft);color:var(--ok)} .msg.bad{background:var(--bad-soft);color:var(--bad)} .msg.warn{background:var(--warn-soft);color:var(--warn)}
+.msg.info{background:var(--accent-soft);color:var(--ink)}
+.result{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:8px}
+.result div{background:var(--panel);border-radius:6px;padding:6px 8px}
+.result b{display:block;font-family:var(--f-num);font-size:18px}
+.result span{font-size:12px;color:var(--muted)}
+.lothead{display:flex;flex-wrap:wrap;gap:8px 18px;align-items:baseline;margin-bottom:12px}
+.lothead .lot{font-family:var(--f-num);font-size:20px;font-weight:600}
+.chip{display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:600;padding:2px 8px;border-radius:999px;background:var(--accent-soft);color:var(--ink)}
+.chip.bad{background:var(--bad-soft);color:var(--bad)} .chip.ok{background:var(--ok-soft);color:var(--ok)} .chip.warn{background:var(--warn-soft);color:var(--warn)}
+.tblwrap{overflow-x:auto;border:1px solid var(--line);border-radius:8px}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{padding:7px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top;white-space:nowrap}
+th{background:var(--bg);font-size:12px;color:var(--muted);font-weight:600;position:sticky;top:0}
+td.n,th.n{text-align:right}
+tr.void td{opacity:.45;text-decoration:line-through}
+.mx td.cell{text-align:right;font-family:var(--f-num);min-width:96px}
+.mx td.cell small{display:block;font-size:11px}
+.mx td.cell.bad{background:var(--bad-soft)} .mx td.cell.ok small{color:var(--ok)} .mx td.cell.bad small{color:var(--bad)}
+.mx th.cp{text-align:right;white-space:normal;min-width:96px;line-height:1.25}
+.mx tfoot td{font-weight:600;background:var(--bg)}
+.up{color:var(--ok)} .down{color:var(--bad)}
+.lots{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px}
+.lotc{text-align:left;cursor:pointer;border:1px solid var(--line);border-left:5px solid var(--ok);background:var(--panel);border-radius:8px;padding:10px 12px;font:inherit;color:inherit}
+.lotc.bad{border-left-color:var(--bad)}
+.lotc:hover{border-color:var(--accent)}
+.lotc .l{font-family:var(--f-num);font-weight:600}
+.lotc .m{font-size:13px;color:var(--muted)}
+.toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+.toolbar input{max-width:280px}
+.empty{color:var(--muted);padding:24px;text-align:center;border:1px dashed var(--line);border-radius:8px}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;padding:16px;z-index:20}
+.modal.on{display:flex}
+.modal .card{max-width:420px;width:100%}
+.scanner{position:fixed;inset:0;background:#000;z-index:30;display:none;flex-direction:column}
+.scanner.on{display:flex}
+.scanner video{flex:1;width:100%;min-height:0;object-fit:cover;background:#000}
+.scanner .frame{position:absolute;left:50%;top:45%;width:min(70vw,320px);aspect-ratio:1;transform:translate(-50%,-50%);border:3px solid var(--tag);border-radius:14px;box-shadow:0 0 0 9999px rgba(0,0,0,.45);pointer-events:none}
+.scanner .bar{display:flex;gap:8px;padding:12px 16px calc(12px + env(safe-area-inset-bottom));background:#111;align-items:center}
+.scanner .bar .btn{flex:1}
+.scanner .stxt{position:absolute;top:calc(12px + env(safe-area-inset-top));left:16px;right:16px;color:#fff;text-align:center;font-weight:600;text-shadow:0 1px 3px #000}
+.station{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:14px;margin:6px 0 10px}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+.flow{display:flex;flex-wrap:wrap;gap:4px;align-items:center;font-size:13px;color:var(--muted);margin-bottom:10px}
+.flow span.f{background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:2px 8px;color:var(--ink)}
+@media (prefers-reduced-motion:no-preference){.btn,.pt,.lotc{transition:border-color .15s,background .15s}}
+
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="topin">
+    <div class="brand"><i aria-hidden="true"></i>บันทึกชั่งน้ำหนักชิ้นงาน</div>
+    <div class="conn"><span class="dot" id="dot"></span><span id="connTxt">กำลังโหลดข้อมูลหลัก…</span></div>
+  </div>
+  <nav class="tabs" role="tablist">
+    <button role="tab" id="t-rec" aria-selected="true" data-v="rec">บันทึกการชั่ง</button>
+    <button role="tab" id="t-trk" aria-selected="false" data-v="trk">ติดตาม Lot</button>
+    <button role="tab" id="t-all" aria-selected="false" data-v="all">Lot ล่าสุด</button>
+  </nav>
+</header>
+
+<main>
+<section class="view on" id="v-rec">
+ <div class="grid2">
+  <form class="card" id="recForm" autocomplete="off">
+    <h2>1. ข้อมูลป้ายงาน</h2>
+    <div class="fld">
+      <label for="f-lot">Lot No. (No. บนป้าย)</label>
+      <div class="inline">
+        <input id="f-lot" placeholder="สแกน QR หรือพิมพ์ Lot No." required>
+        <button class="btn" id="clearBtn" type="button" title="ล้างข้อมูลป้ายที่สแกน">ล้าง</button>
+      </div>
+      <button class="btn pri wide" id="scanBtn" type="button" style="margin-top:8px">สแกน QR จากป้าย</button>
+      <input type="file" id="f-qr" accept="image/*" capture="environment" class="sr">
+      <span class="hint" id="qrHint"></span>
+      <div id="scanInfo"></div>
+    </div>
+    <div class="row">
+      <div class="fld">
+        <label for="f-model">Model (BTS Code)</label>
+        <input id="f-model" list="dl-model" placeholder="เช่น P316" required>
+      </div>
+      <div class="fld">
+        <label for="f-box">Box ที่</label>
+        <input id="f-box" inputmode="numeric" placeholder="1" required>
+      </div>
+    </div>
+    <div id="routeMsg"></div>
+
+    <h2 style="margin-top:6px">2. จุดชั่ง (กระบวนการ)</h2>
+    <div class="steps" id="steps"><div class="empty">ใส่ Model เพื่อแสดงกระบวนการ</div></div>
+
+    <h2>3. ผู้ชั่งและเครื่อง</h2>
+    <div class="row">
+      <div class="fld">
+        <label for="f-mc">ชื่อเครื่อง / ผู้รับงาน</label>
+        <input id="f-mc" list="dl-mc" placeholder="เช่น MP606" required>
+      </div>
+      <div class="fld">
+        <label for="f-opid">รหัสพนักงาน</label>
+        <input id="f-opid" list="dl-op" inputmode="numeric" placeholder="เช่น 9069" required>
+      </div>
+    </div>
+    <div class="hint" id="opName" style="margin:-4px 0 10px"></div>
+
+    <h2>4. น้ำหนักจริง</h2>
+    <div class="row">
+      <div class="fld">
+        <label for="f-kg">น้ำหนัก (kg)</label>
+        <input id="f-kg" class="big" inputmode="decimal" placeholder="0.000" required>
+      </div>
+      <div class="fld">
+        <label for="f-qty">จำนวน (ชิ้น)</label>
+        <input id="f-qty" class="big" inputmode="numeric" placeholder="10000">
+      </div>
+    </div>
+    <div class="fld">
+      <label for="f-note">หมายเหตุ</label>
+      <input id="f-note" placeholder="ถ้ามี เช่น พบชิ้นงานเสีย 20 ชิ้น">
+    </div>
+    <div id="preview"></div>
+    <button class="btn pri wide" id="saveBtn" type="submit">บันทึกน้ำหนัก</button>
+    <div id="saveMsg"></div>
+  </form>
+
+  <div class="card">
+    <h2>ข้อมูลการชั่งของ Lot นี้ (ทุกกระบวนการ)</h2>
+    <div id="recLot"><div class="empty">ใส่ Lot No. เพื่อดูข้อมูลการชั่งที่บันทึกไว้แล้ว</div></div>
+  </div>
+ </div>
+</section>
+
+<section class="view" id="v-trk">
+  <div class="card">
+    <div class="toolbar">
+      <input id="trkLot" placeholder="ค้นหา Lot No." aria-label="Lot No.">
+      <button class="btn pri" id="trkGo" type="button">แสดง</button>
+      <button class="btn" id="trkRefresh" type="button">รีเฟรช</button>
+    </div>
+    <div id="trkOut"><div class="empty">ใส่ Lot No. แล้วกดแสดง หรือเลือกจากแท็บ "Lot ล่าสุด"</div></div>
+  </div>
+</section>
+
+<section class="view" id="v-all">
+  <div class="card">
+    <div class="toolbar">
+      <input id="allFilter" placeholder="กรองตาม Lot / Model / เครื่อง" aria-label="กรอง">
+      <select id="allFlag" aria-label="สถานะ" style="max-width:200px">
+        <option value="">ทุกสถานะ</option>
+        <option value="bad">เฉพาะที่น้ำหนักผิดปกติ</option>
+      </select>
+      <button class="btn" id="allRefresh" type="button">รีเฟรช</button>
+      <a class="btn" id="sheetLink" href="#" target="_blank" rel="noopener" hidden>เปิด Google Sheet</a>
+    </div>
+    <div id="allOut"><div class="empty">กำลังโหลด…</div></div>
+  </div>
+</section>
+</main>
+
+<div class="scanner" id="scanner" role="dialog" aria-modal="true" aria-label="สแกน QR">
+  <video id="scanVideo" playsinline muted></video>
+  <div class="frame" aria-hidden="true"></div>
+  <div class="stxt" id="scanTxt">เล็ง QR บนป้ายให้อยู่ในกรอบ</div>
+  <div class="bar">
+    <button class="btn" id="torchBtn" type="button" hidden>ไฟฉาย</button>
+    <button class="btn pri" id="scanClose" type="button">ปิดกล้อง</button>
+  </div>
+</div>
+
+<div class="modal" id="keyModal" role="dialog" aria-modal="true" aria-labelledby="kTitle">
+  <div class="card">
+    <h2 id="kTitle">ใส่รหัสเข้าใช้งาน</h2>
+    <p class="hint" style="font-size:14px">ขอรหัสจากหัวหน้างาน ใส่ครั้งเดียว เครื่องนี้จะจำไว้</p>
+    <div class="fld"><label for="kInput">รหัส</label><input id="kInput" type="password" autocomplete="off"></div>
+    <button class="btn pri wide" id="kSave" type="button">ตกลง</button>
+  </div>
+</div>
+
+<div class="modal" id="modal" role="dialog" aria-modal="true" aria-labelledby="mTitle">
+  <div class="card">
+    <h2 id="mTitle">ยกเลิกรายการนี้?</h2>
+    <p id="mBody" class="hint" style="font-size:14px"></p>
+    <div class="fld"><label for="mReason">เหตุผล</label><input id="mReason" placeholder="เช่น ใส่น้ำหนักผิด"></div>
+    <div class="inline"><button class="btn" id="mNo" type="button">ไม่ยกเลิก</button><button class="btn pri" id="mYes" type="button">ยกเลิกรายการ</button></div>
+  </div>
+</div>
+
+<datalist id="dl-model"></datalist>
+<datalist id="dl-mc"></datalist>
+<datalist id="dl-op"></datalist>
+
+<script>
+"use strict";
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const fmt=(n,d=3)=>(n==null||isNaN(n))?"—":Number(n).toLocaleString("en-US",{minimumFractionDigits:d,maximumFractionDigits:d});
+const fmtI=n=>(n==null||isNaN(n))?"—":Math.round(n).toLocaleString("en-US");
+const sgn=(n,d)=>(n>0?"+":"")+fmt(n,d);
+const lotKey=s=>String(s||"").trim().toUpperCase();
+const nowTxt=ts=>{const d=new Date(ts);return d.toLocaleDateString("th-TH",{day:"2-digit",month:"2-digit",year:"2-digit"})+" "+d.toLocaleTimeString("th-TH",{hour:"2-digit",minute:"2-digit"});};
+const ls={get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{localStorage.setItem(k,v)}catch(e){}}};
+/* ===== ตั้งค่า: วาง URL ของ Web app (ลงท้าย /exec) ระหว่างเครื่องหมายคำพูด ===== */
+const API_URL = "PASTE_WEB_APP_URL_HERE";
+/* ================================================================================ */
+const IN_GAS = typeof google!=="undefined" && google.script && google.script.run;
+function rpcRaw(action,p){
+  if(IN_GAS) return new Promise((res,rej)=>google.script.run.withSuccessHandler(res).withFailureHandler(rej).rpc(action,p));
+  if(!/^https:\/\/script\.google(usercontent)?\.com\//.test(API_URL)) return Promise.reject(new Error("ยังไม่ได้ใส่ API_URL ในไฟล์ index.html"));
+  const write=(action==="saveRecord"||action==="voidRecord");
+  const req = write
+    ? fetch(API_URL,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify({action,...p})})
+    : fetch(API_URL+"?"+new URLSearchParams({action,...p}).toString());
+  return req.then(r=>r.json()).catch(()=>{ throw new Error("เชื่อมต่อ Google Sheet ไม่ได้ ตรวจอินเทอร์เน็ต"); });
+}
+async function rpc(action,p={}){
+  const j=await rpcRaw(action,{...p,key:ls.get("appKey")||""});
+  if(!j||!j.ok){ const m=(j&&j.error)||"ผิดพลาด"; if(m.indexOf("รหัสเข้าใช้งาน")>=0) askKey(); throw new Error(m); }
+  return j.data;
+}
+const api=(fn,...a)=>{
+  if(fn==="getLot") return rpc(fn,{lot:a[0]});
+  if(fn==="getRecentLots") return rpc(fn,{limit:a[0]||100});
+  if(fn==="saveRecord") return rpc(fn,{data:a[0]});
+  if(fn==="voidRecord") return rpc(fn,{id:a[0],reason:a[1]});
+  return rpc(fn);
+};
+function askKey(){ $("#kInput").value=""; $("#keyModal").classList.add("on"); setTimeout(()=>$("#kInput").focus(),50); }
+const errTxt=e=>(e&&e.message)?e.message.replace(/^Exception:\s*/,""):String(e);
+
+let M={routing:{},mc:[],op:[]}, OPS={}, tolPct=1;
+let station=null; try{station=JSON.parse(ls.get("station")||"null")}catch(e){}
+let sel=null, curLot=null, lotDoc=null, lotPoll=null;
+let trkLotId=null, trkDoc=null, trkPoll=null;
+let allLots=[];
+
+function mcFromWc(wc){ const i=wc.indexOf("-"); return i>0?wc.slice(i+1).trim():wc; }
+function routeOf(model){ return M.routing[String(model||"").trim().toUpperCase()]||null; }
+function ptLabel(sec,pt){ return sec==="SUP" ? (pt==="B"?"ส่งไป Supplier":"รับคืนจาก Supplier") : (pt==="B"?"รับเข้า (ก่อนทำ)":"ส่งออก (หลังทำ)"); }
+function ptShort(sec,pt){ return sec==="SUP" ? (pt==="B"?"ส่งไป":"รับคืน") : (pt==="B"?"รับเข้า":"ส่งออก"); }
+function ord(r){ const o=parseInt(r.op,10); return (isNaN(o)?9990:o)*10+(r.pt==="B"?0:1); }
+
+let canWrite=true;
+/* ---------- lot computations ---------- */
+function recsOf(doc){ if(!doc||!doc.recs) return []; return Object.entries(doc.recs).map(([id,r])=>({id,...r})); }
+function analyse(doc){
+  const all=recsOf(doc); const live=all.filter(r=>!r.void);
+  const byBox={};
+  live.forEach(r=>{(byBox[r.box]=byBox[r.box]||[]).push(r)});
+  const calc={}; let flags=0;
+  Object.values(byBox).forEach(list=>{
+    list.sort((a,b)=>ord(a)-ord(b)||a.ts-b.ts);
+    let uw=null;
+    list.forEach((r,i)=>{
+      if(uw==null && r.qty>0 && r.kg>0) uw=r.kg/r.qty;
+      const c={est: uw? r.kg/uw : null};
+      if(i>0){ const p=list[i-1]; c.prev=p; c.dKg=r.kg-p.kg; c.dPct=p.kg? c.dKg/p.kg*100 : null;
+        c.dPcs=(uw)? (r.kg-p.kg)/uw : null; c.bad=c.dPct!=null && Math.abs(c.dPct)>tolPct; if(c.bad) flags++; }
+      calc[r.id]=c;
+    });
+  });
+  // checkpoints: from routing plus any recorded ones
+  const cps=new Map();
+  const rt=routeOf(doc&&doc.model);
+  if(rt) rt.forEach(s=>{ ["B","A"].forEach(pt=>cps.set(s[0]+":"+pt,{op:s[0],wc:s[1],sec:s[2],pt})) });
+  live.forEach(r=>{const k=r.op+":"+r.pt; if(!cps.has(k)) cps.set(k,{op:r.op,wc:r.wc,sec:r.sec,pt:r.pt});});
+  const cpList=[...cps.values()].sort((a,b)=>ord(a)-ord(b));
+  const boxes=Object.keys(byBox).sort((a,b)=>(parseFloat(a)||0)-(parseFloat(b)||0)||a.localeCompare(b));
+  return {all,live,byBox,calc,flags,cpList,boxes};
+}
+
+function renderLot(doc, target, opts={}){
+  if(!doc){ target.innerHTML='<div class="empty">ยังไม่มีการชั่งของ Lot นี้ — การบันทึกครั้งแรกจะสร้าง Lot ให้อัตโนมัติ</div>'; return; }
+  const A=analyse(doc);
+  // keep only checkpoints that have data, unless compact=false
+  const used=A.cpList.filter(cp=>A.live.some(r=>r.op===cp.op&&r.pt===cp.pt));
+  const rt=routeOf(doc.model);
+  let h=`<div class="lothead"><span class="lot">${esc(doc.lot)}</span><span>Model <b>${esc(doc.model||"-")}</b></span>
+    <span class="chip">${A.boxes.length} Box</span><span class="chip">${A.live.length} ครั้ง</span>
+    ${A.flags?`<span class="chip bad">ผิดปกติ ${A.flags} จุด</span>`:(A.live.length?'<span class="chip ok">ปกติ</span>':'')}
+    <span class="hint">อัปเดต ${doc.updatedAt?nowTxt(doc.updatedAt):"-"}</span></div>`;
+  if(rt) h+=`<div class="flow">${rt.map(s=>`<span class="f">${esc(s[1])}</span>`).join("→")}</div>`;
+  if(!A.live.length){ target.innerHTML=h+'<div class="empty">ยังไม่มีการชั่ง</div>'; return; }
+  // matrix
+  h+=`<h3>ตารางเทียบน้ำหนัก (kg) ต่อ Box</h3><div class="tblwrap"><table class="mx"><thead><tr><th>Box</th>${used.map(cp=>`<th class="cp">${esc(cp.wc)}<br><span style="font-weight:500">${ptShort(cp.sec,cp.pt)}</span></th>`).join("")}</tr></thead><tbody>`;
+  const tot=used.map(()=>({kg:0,n:0}));
+  A.boxes.forEach(b=>{
+    h+=`<tr><td><b>${esc(b)}</b></td>`;
+    used.forEach((cp,j)=>{
+      const rs=A.byBox[b].filter(r=>r.op===cp.op&&r.pt===cp.pt);
+      if(!rs.length){ h+='<td class="cell">—</td>'; return; }
+      const r=rs[rs.length-1], c=A.calc[r.id]; tot[j].kg+=r.kg; tot[j].n++;
+      const cls=c.prev?(c.bad?"bad":"ok"):"";
+      h+=`<td class="cell ${cls}" title="${esc(r.mc)} · ${esc(r.opId)} · ${nowTxt(r.ts)}">${fmt(r.kg)}${c.prev?`<small>${sgn(c.dKg)} (${sgn(c.dPct,2)}%)</small>`:"<small>&nbsp;</small>"}</td>`;
+    });
+    h+="</tr>";
+  });
+  h+=`</tbody><tfoot><tr><td>รวม</td>${tot.map(t=>`<td class="cell">${fmt(t.kg)}<small>${t.n} Box</small></td>`).join("")}</tr></tfoot></table></div>`;
+  // detail
+  const rows=[...A.all].sort((a,b)=>b.ts-a.ts);
+  h+=`<h3 style="margin-top:16px">ประวัติการชั่งทั้งหมด</h3><div class="tblwrap"><table><thead><tr><th>เวลา</th><th>Box</th><th>กระบวนการ</th><th>จุดชั่ง</th><th>เครื่อง</th><th>พนักงาน</th><th class="n">ชิ้น</th><th class="n">kg</th><th class="n">ต่างจากก่อนหน้า</th><th class="n">ชิ้น (ประมาณ)</th><th>หมายเหตุ</th><th></th></tr></thead><tbody>`;
+  rows.forEach(r=>{
+    const c=A.calc[r.id]||{}; const op=OPS[r.opId];
+    const diff=r.void?"":(c.prev?`<span class="${c.bad?"down":""}">${sgn(c.dKg)} kg<br>${sgn(c.dPct,2)}%${c.dPcs!=null?` · ${c.dPcs>0?"+":""}${fmtI(c.dPcs)} ชิ้น`:""}</span>`:'<span class="hint">จุดแรก</span>');
+    h+=`<tr class="${r.void?"void":""}"><td>${nowTxt(r.ts)}</td><td>${esc(r.box)}</td><td>${esc(r.wc)}</td><td>${esc(ptLabel(r.sec,r.pt))}</td><td>${esc(r.mc)}</td><td>${esc(r.opId)}${op?`<br><span class="hint">${esc(op[1])}</span>`:""}</td><td class="n num">${r.qty?fmtI(r.qty):"—"}</td><td class="n num">${fmt(r.kg)}</td><td class="n num">${diff}</td><td class="n num">${r.void?"":fmtI(c.est)}</td><td style="white-space:normal;min-width:120px">${esc(r.note||"")}${r.void?`<br><span class="hint">ยกเลิก: ${esc(r.voidReason||"")}</span>`:""}</td><td>${(!r.void&&canWrite)?`<button class="btn sm" data-void="${esc(r.id)}" data-lot="${esc(lotKey(doc.lot))}">ยกเลิก</button>`:""}</td></tr>`;
+  });
+  h+="</tbody></table></div>";
+  target.innerHTML=h;
+}
+
+/* ---------- record form ---------- */
+function renderSteps(){
+  const model=$("#f-model").value.trim().toUpperCase();
+  const rt=routeOf(model);
+  const el=$("#steps");
+  if(!model){ el.innerHTML='<div class="empty">ใส่ Model เพื่อแสดงกระบวนการ</div>'; sel=null; return; }
+  if(!rt){ el.innerHTML='<div class="msg warn">ไม่พบ Routing ของ Model นี้ในข้อมูลหลัก ตรวจสอบรหัส Model อีกครั้ง</div>'; sel=null; updatePreview(); return; }
+  // คงจุดชั่งของสถานีเดิมไว้ เมื่อสแกนป้ายใบใหม่
+  if(sel && !rt.some(x=>x[0]===sel.op&&x[1]===sel.wc)) sel=null;
+  if(!sel && station){ const st=rt.find(x=>x[1]===station.wc); if(st) sel={op:st[0],wc:st[1],sec:st[2],pt:station.pt}; }
+  const box=$("#f-box").value.trim();
+  const A=lotDoc?analyse(lotDoc):null;
+  const done=new Set(A&&box&&A.byBox[box]?A.byBox[box].map(r=>r.op+":"+r.pt):[]);
+  // next expected: first checkpoint after the last done one
+  let lastOrd=-1; if(A&&box&&A.byBox[box]) A.byBox[box].forEach(r=>{lastOrd=Math.max(lastOrd,ord(r))});
+  let next=null;
+  rt.forEach(s=>["B","A"].forEach(pt=>{ if(!next && ord({op:s[0],pt})>lastOrd && !(s[0]===rt[0][0]&&pt==="B"&&lastOrd<0)) next=s[0]+":"+pt; }));
+  if(lastOrd<0) next=rt[0][0]+":A";
+  el.innerHTML=rt.map(s=>`<div class="step"><span class="op">${esc(s[0])}</span><span class="wc">${esc(s[1])}<span class="sec">${esc(s[2])}</span></span>
+    <div class="pts">${["B","A"].map(pt=>{const k=s[0]+":"+pt; const isSel=sel&&sel.op===s[0]&&sel.pt===pt;
+      return `<button type="button" class="pt ${done.has(k)?"done":""} ${isSel?"sel":""} ${k===next?"next":""}" data-op="${esc(s[0])}" data-pt="${pt}">${ptLabel(s[2],pt)}</button>`}).join("")}</div></div>`).join("")
+    + `<div class="hint">ปุ่มขอบประจุดส้ม = จุดชั่งถัดไปที่ควรทำของ Box นี้ · ✓ = ชั่งแล้ว</div>`;
+  updatePreview();
+}
+function pickStep(op,pt){
+  const rt=routeOf($("#f-model").value); const s=rt&&rt.find(x=>x[0]===op); if(!s) return;
+  sel={op:s[0],wc:s[1],sec:s[2],pt};
+  station={wc:s[1],pt}; ls.set("station",JSON.stringify(station));
+  // default machine: process machine from routing (Supplier name for SUP)
+  const mcDefault=mcFromWc(s[1]);
+  const lastMc=ls.get("mc:"+s[1]);
+  $("#f-mc").value=lastMc||mcDefault;
+  renderSteps();
+}
+function boxBaseQty(){
+  const box=$("#f-box").value.trim(); if(!lotDoc||!box) return null;
+  const A=analyse(lotDoc); const l=A.byBox[box]; if(!l) return null;
+  const withQ=l.filter(r=>r.qty>0); return withQ.length?withQ[0].qty:null;
+}
+function updatePreview(){
+  const out=$("#preview"); const kg=parseFloat($("#f-kg").value);
+  const box=$("#f-box").value.trim();
+  if(!sel||!lotDoc||!box||!(kg>0)){ out.innerHTML=""; return; }
+  const A=analyse(lotDoc); const l=(A.byBox[box]||[]);
+  const myOrd=ord(sel); const before=l.filter(r=>ord(r)<=myOrd).sort((a,b)=>ord(a)-ord(b)||a.ts-b.ts);
+  const p=before[before.length-1]; if(!p){ out.innerHTML=""; return; }
+  const d=kg-p.kg, pct=d/p.kg*100; const bad=Math.abs(pct)>tolPct;
+  const qtyRec=l.find(r=>r.qty>0&&r.kg>0); const uw=qtyRec?qtyRec.kg/qtyRec.qty:null;
+  out.innerHTML=`<div class="msg ${bad?"bad":"ok"}"><b>${bad?"น้ำหนักต่างเกินเกณฑ์ "+tolPct+"% — ตรวจนับก่อนบันทึก":"น้ำหนักอยู่ในเกณฑ์"}</b>
+   <div class="result"><div><span>ก่อนหน้า (${esc(p.wc)} ${ptShort(p.sec,p.pt)})</span><b>${fmt(p.kg)}</b></div><div><span>ต่าง kg / %</span><b>${sgn(d)}<br>${sgn(pct,2)}%</b></div><div><span>ต่าง (ชิ้นโดยประมาณ)</span><b>${uw?(d>0?"+":"")+fmtI(d/uw):"—"}</b></div></div></div>`;
+}
+
+function checkModel(){
+  const m=$("#f-model").value.trim().toUpperCase(); const r=$("#routeMsg");
+  if(lotDoc&&lotDoc.model&&m&&lotDoc.model!==m) r.innerHTML=`<div class="msg bad">Lot นี้ถูกบันทึกเป็น Model <b>${esc(lotDoc.model)}</b> แต่ใส่ ${esc(m)} — ตรวจสอบป้ายงาน</div>`;
+  else r.innerHTML="";
+}
+
+
+
+/* ---------- lot loading (poll every 20 s while open) ---------- */
+async function loadLot(k){
+  try{
+    const d=await api("getLot",k);
+    if(curLot!==k) return;
+    lotDoc=d; if(d&&d.tolPct) tolPct=d.tolPct;
+    if(lotDoc&&lotDoc.model&&!$("#f-model").value){ $("#f-model").value=lotDoc.model; }
+    renderLot(lotDoc,$("#recLot")); renderSteps(); checkModel(); setConn(true);
+  }catch(e){ setConn(false); if(curLot===k&&!lotDoc) $("#recLot").innerHTML='<div class="msg bad">อ่านข้อมูลไม่ได้: '+esc(errTxt(e))+'</div>'; }
+}
+function watchLot(){
+  const k=lotKey($("#f-lot").value);
+  if(k===curLot) return;
+  curLot=k; lotDoc=null; clearInterval(lotPoll);
+  if(!k){ $("#recLot").innerHTML='<div class="empty">ใส่ Lot No. เพื่อดูข้อมูลการชั่งที่บันทึกไว้แล้ว</div>'; renderSteps(); return; }
+  $("#recLot").innerHTML='<div class="empty">กำลังโหลด…</div>';
+  loadLot(k); lotPoll=setInterval(()=>{ if(!document.hidden) loadLot(k); },20000);
+}
+
+async function saveRec(ev){
+  ev.preventDefault();
+  const msg=$("#saveMsg"); msg.innerHTML="";
+  const lot=lotKey($("#f-lot").value), model=$("#f-model").value.trim().toUpperCase(), box=$("#f-box").value.trim();
+  const kg=parseFloat($("#f-kg").value), qty=parseInt(String($("#f-qty").value).replace(/,/g,""),10);
+  const mc=$("#f-mc").value.trim(), opId=$("#f-opid").value.trim();
+  const err=[];
+  if(!lot) err.push("Lot No."); if(!model) err.push("Model"); if(!box) err.push("Box"); if(!sel) err.push("จุดชั่ง");
+  if(!mc) err.push("ชื่อเครื่อง"); if(!opId) err.push("รหัสพนักงาน"); if(!(kg>0)) err.push("น้ำหนัก");
+  if(err.length){ msg.innerHTML=`<div class="msg bad">กรุณาใส่: ${err.join(", ")}</div>`; return; }
+  if(lotDoc&&lotDoc.model&&lotDoc.model!==model){ msg.innerHTML='<div class="msg bad">Model ไม่ตรงกับ Lot ที่บันทึกไว้ แก้ไขก่อนบันทึก</div>'; return; }
+  const btn=$("#saveBtn"); btn.disabled=true; btn.textContent="กำลังบันทึก…";
+  try{
+    const r=await api("saveRecord",{lot,model,box,op:sel.op,wc:sel.wc,sec:sel.sec,pt:sel.pt,mc,opId,opName:OPS[opId]?OPS[opId][1]:"",kg,qty:qty>0?qty:"",note:$("#f-note").value.trim()});
+    ls.set("opId",opId); ls.set("mc:"+sel.wc,mc);
+    const bad=r.status==="ผิดปกติ";
+    msg.innerHTML=`<div class="msg ${bad?"bad":"ok"}">บันทึกแล้ว: Box ${esc(box)} · ${esc(sel.wc)} ${ptShort(sel.sec,sel.pt)} · <b class="num">${fmt(kg)} kg</b>${r.dKg!==""?` · ต่างจากก่อนหน้า ${sgn(r.dKg)} kg (${sgn(r.dPct,2)}%)`:""}${bad?"<br><b>เกินเกณฑ์ — แจ้งหัวหน้างานตรวจนับ</b>":""}</div>`;
+    $("#f-kg").value=""; $("#f-note").value=""; $("#preview").innerHTML="";
+    curLot=null; watchLot();
+  }catch(e){
+    msg.innerHTML=`<div class="msg bad">บันทึกไม่สำเร็จ: ${esc(errTxt(e))} — ลองกดบันทึกอีกครั้ง</div>`;
+  }finally{ btn.disabled=false; btn.textContent="บันทึกน้ำหนัก"; }
+}
+
+/* ---------- void ---------- */
+let pendingVoid=null;
+document.addEventListener("click",e=>{
+  const b=e.target.closest("[data-void]"); if(b){ pendingVoid={id:b.dataset.void}; $("#mBody").textContent="รายการจะถูกขีดฆ่าและไม่นำไปเทียบน้ำหนัก แต่ยังเก็บประวัติไว้ใน Google Sheet"; $("#mReason").value=""; $("#modal").classList.add("on"); $("#mReason").focus(); return; }
+  const p=e.target.closest(".pt"); if(p){ pickStep(p.dataset.op,p.dataset.pt); return; }
+  const l=e.target.closest("[data-open]"); if(l){ openTrack(l.dataset.open); }
+});
+$("#mNo").onclick=()=>{ $("#modal").classList.remove("on"); pendingVoid=null; };
+$("#mYes").onclick=async()=>{
+  if(!pendingVoid) return; const reason=$("#mReason").value.trim();
+  if(!reason){ $("#mReason").focus(); $("#mReason").placeholder="กรุณาใส่เหตุผล"; return; }
+  $("#mYes").disabled=true;
+  try{ await api("voidRecord",pendingVoid.id,reason); }
+  catch(e){ $("#mBody").textContent="ยกเลิกไม่สำเร็จ: "+errTxt(e); $("#mYes").disabled=false; return; }
+  $("#mYes").disabled=false; $("#modal").classList.remove("on"); pendingVoid=null;
+  if(curLot){ const k=curLot; loadLot(k); } if(trkLotId) loadTrk(trkLotId);
+};
+
+/* ---------- track ---------- */
+function openTrack(lot){ $("#trkLot").value=lot; showView("trk"); trackGo(); }
+async function loadTrk(k){
+  try{
+    const d=await api("getLot",k); if(trkLotId!==k) return; trkDoc=d; if(d&&d.tolPct) tolPct=d.tolPct;
+    if(!d){ $("#trkOut").innerHTML='<div class="empty">ไม่พบ Lot '+esc(k)+'</div>'; return; }
+    renderLot(d,$("#trkOut"));
+  }catch(e){ $("#trkOut").innerHTML='<div class="msg bad">อ่านข้อมูลไม่ได้: '+esc(errTxt(e))+'</div>'; }
+}
+function trackGo(){
+  const k=lotKey($("#trkLot").value); if(!k) return;
+  trkLotId=k; trkDoc=null; clearInterval(trkPoll);
+  $("#trkOut").innerHTML='<div class="empty">กำลังโหลด…</div>';
+  loadTrk(k); trkPoll=setInterval(()=>{ if(!document.hidden&&$("#v-trk").classList.contains("on")) loadTrk(k); },20000);
+}
+$("#trkGo").onclick=trackGo; $("#trkRefresh").onclick=()=>trkLotId&&loadTrk(trkLotId);
+$("#trkLot").addEventListener("keydown",e=>{ if(e.key==="Enter") trackGo(); });
+
+/* ---------- all lots ---------- */
+async function loadAll(){
+  $("#allRefresh").disabled=true;
+  try{ allLots=await api("getRecentLots",100); renderAll(); }
+  catch(e){ $("#allOut").innerHTML='<div class="msg bad">อ่านข้อมูลไม่ได้: '+esc(errTxt(e))+'</div>'; }
+  $("#allRefresh").disabled=false;
+}
+function renderAll(){
+  const q=$("#allFilter").value.trim().toUpperCase(), onlyBad=$("#allFlag").value==="bad";
+  const out=$("#allOut");
+  if(!allLots.length){ out.innerHTML='<div class="empty">ยังไม่มีข้อมูลการชั่ง เริ่มบันทึกได้ที่แท็บ "บันทึกการชั่ง"</div>'; return; }
+  const items=allLots.map(d=>({d,A:analyse(d)})).filter(({d,A})=>{
+    if(onlyBad&&!A.flags) return false;
+    if(!q) return true;
+    return (d.lot||"").toUpperCase().includes(q)||(d.model||"").toUpperCase().includes(q)||A.live.some(r=>(r.mc||"").toUpperCase().includes(q));
+  });
+  if(!items.length){ out.innerHTML='<div class="empty">ไม่พบ Lot ที่ตรงกับเงื่อนไข</div>'; return; }
+  out.innerHTML=`<p class="hint">แสดง ${items.length} Lot ที่อัปเดตล่าสุด</p><div class="lots">`+items.map(({d,A})=>{
+    const last=[...A.live].sort((a,b)=>b.ts-a.ts)[0];
+    return `<button class="lotc ${A.flags?"bad":""}" data-open="${esc(d.lot)}"><div class="l">${esc(d.lot)}</div>
+      <div class="m">Model ${esc(d.model||"-")} · ${A.boxes.length} Box · ${A.live.length} ครั้ง</div>
+      <div class="m">ล่าสุด: ${last?esc(last.wc)+" "+ptShort(last.sec,last.pt)+" · "+nowTxt(last.ts):"-"}</div>
+      ${A.flags?`<span class="chip bad">ผิดปกติ ${A.flags} จุด</span>`:'<span class="chip ok">ปกติ</span>'}</button>`;}).join("")+"</div>";
+}
+$("#allFilter").addEventListener("input",renderAll); $("#allFlag").addEventListener("change",renderAll);
+$("#allRefresh").onclick=loadAll;
+
+/* ---------- QR scan: live camera from label, photo as fallback, scanner gun via Enter ---------- */
+let scanStream=null, scanTimer=null, detector=null, torchOn=false;
+const scanCanvas=document.createElement("canvas");
+
+function parseQR(text){
+  const t=String(text||"").trim();
+  const lotM=t.match(/PDR-?\d{6,}/i);
+  const modM=Object.keys(M.routing).sort((a,b)=>b.length-a.length)
+    .find(m=>new RegExp("(^|[^A-Z0-9])"+m.replace(/[-]/g,"\\-")+"([^A-Z0-9-]|$)","i").test(t));
+  return {raw:t, lot:(lotM?lotM[0]:t).toUpperCase(), model:modM||""};
+}
+
+// สแกนป้ายใบใหม่ = เปลี่ยน Lot และล้างข้อมูลของใบเก่า (คงจุดชั่ง เครื่อง และรหัสพนักงานไว้)
+function applyScan(text){
+  const q=parseQR(text); if(!q.raw) return;
+  const prev=lotKey($("#f-lot").value);
+  const isNew=q.lot!==prev;
+  if(isNew){ resetLabel(false); }
+  $("#f-lot").value=q.lot;
+  if(q.model) $("#f-model").value=q.model;
+  $("#scanInfo").innerHTML=`<div class="msg ${isNew?"info":"warn"}">${isNew?"ป้ายใหม่":"ป้ายเดิม (Lot เดิม)"}: <b class="num">${esc(q.lot)}</b>${q.model?` · Model <b>${esc(q.model)}</b>`:""}`
+    +`${station?`<br>จุดชั่ง: <b>${esc(station.wc)}</b> คงไว้จากใบก่อน`:""}<br><span class="hint">ข้อมูลใน QR: ${esc(q.raw)}</span></div>`;
+  $("#qrHint").textContent="";
+  try{ navigator.vibrate&&navigator.vibrate(120); }catch(e){}
+  watchLot(); renderSteps();
+  setTimeout(()=>{ const b=$("#f-box"); if(!b.value){ b.focus(); } else $("#f-kg").focus(); },100);
+}
+
+// ล้างข้อมูลป้าย (ใช้เมื่อสแกนผิด)
+function resetLabel(clearInfo=true){
+  ["#f-lot","#f-model","#f-box","#f-kg","#f-qty","#f-note"].forEach(id=>$(id).value="");
+  ["#preview","#saveMsg","#routeMsg"].forEach(id=>$(id).innerHTML="");
+  if(clearInfo){ $("#scanInfo").innerHTML=""; $("#qrHint").textContent=""; }
+  sel=null; curLot=null; lotDoc=null; clearInterval(lotPoll);
+  $("#recLot").innerHTML='<div class="empty">ใส่ Lot No. เพื่อดูข้อมูลการชั่งที่บันทึกไว้แล้ว</div>';
+  renderSteps();
+}
+$("#clearBtn").onclick=()=>{ resetLabel(true); $("#scanBtn").focus(); };
+
+async function openScanner(){
+  if(!(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia)){ cameraFallback("เบราว์เซอร์นี้เปิดกล้องสดไม่ได้"); return; }
+  try{
+    scanStream=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:"environment"},width:{ideal:1280},height:{ideal:720}}});
+  }catch(e){
+    cameraFallback(e&&e.name==="NotAllowedError"?"ไม่ได้รับอนุญาตให้ใช้กล้อง (อนุญาตกล้องในการตั้งค่าเบราว์เซอร์)":"เปิดกล้องไม่ได้");
+    return;
+  }
+  const v=$("#scanVideo"); v.srcObject=scanStream; $("#scanner").classList.add("on"); $("#scanTxt").textContent="เล็ง QR บนป้ายให้อยู่ในกรอบ";
+  try{ await v.play(); }catch(e){}
+  detector=null;
+  try{ if("BarcodeDetector" in window){ const f=await BarcodeDetector.getSupportedFormats(); if(f.includes("qr_code")) detector=new BarcodeDetector({formats:["qr_code"]}); } }catch(e){ detector=null; }
+  const track=scanStream.getVideoTracks()[0]; torchOn=false;
+  try{ const caps=track.getCapabilities?track.getCapabilities():{}; $("#torchBtn").hidden=!caps.torch; }catch(e){ $("#torchBtn").hidden=true; }
+  scanLoop();
+}
+function cameraFallback(why){
+  $("#qrHint").innerHTML=esc(why)+' — <label for="f-qr" style="text-decoration:underline;cursor:pointer">ถ่ายรูป QR แทน</label> หรือพิมพ์ Lot No.';
+}
+async function scanLoop(){
+  if(!scanStream) return;
+  const v=$("#scanVideo");
+  if(v.readyState>=2 && v.videoWidth){
+    let text=null;
+    try{
+      if(detector){ const r=await detector.detect(v); if(r&&r.length) text=r[0].rawValue; }
+      else if(window.jsQR){
+        const sc=Math.min(1,800/Math.max(v.videoWidth,v.videoHeight));
+        scanCanvas.width=Math.round(v.videoWidth*sc); scanCanvas.height=Math.round(v.videoHeight*sc);
+        const x=scanCanvas.getContext("2d",{willReadFrequently:true}); x.drawImage(v,0,0,scanCanvas.width,scanCanvas.height);
+        const d=x.getImageData(0,0,scanCanvas.width,scanCanvas.height);
+        const r=jsQR(d.data,scanCanvas.width,scanCanvas.height,{inversionAttempts:"dontInvert"}); if(r) text=r.data;
+      }
+    }catch(e){}
+    if(text){ closeScanner(); applyScan(text); return; }
+  }
+  scanTimer=setTimeout(scanLoop,150);
+}
+function closeScanner(){
+  clearTimeout(scanTimer);
+  if(scanStream){ scanStream.getTracks().forEach(t=>t.stop()); scanStream=null; }
+  $("#scanVideo").srcObject=null; $("#scanner").classList.remove("on");
+}
+$("#scanBtn").onclick=openScanner;
+$("#scanClose").onclick=closeScanner;
+$("#torchBtn").onclick=async()=>{ try{ torchOn=!torchOn; await scanStream.getVideoTracks()[0].applyConstraints({advanced:[{torch:torchOn}]}); }catch(e){} };
+document.addEventListener("visibilitychange",()=>{ if(document.hidden) closeScanner(); });
+
+// เครื่องยิงบาร์โค้ด (USB/Bluetooth) พิมพ์แล้วกด Enter ในช่อง Lot
+$("#f-lot").addEventListener("keydown",e=>{ if(e.key==="Enter"){ e.preventDefault(); const t=$("#f-lot").value; $("#f-lot").value=lotKey(curLot||""); applyScan(t); } });
+
+// สำรอง: ถ่ายรูป QR
+$("#f-qr").addEventListener("change",async e=>{
+  const f=e.target.files&&e.target.files[0]; const hint=$("#qrHint"); if(!f) return;
+  hint.textContent="กำลังอ่าน QR…";
+  try{
+    const img=await createImageBitmap(f); const sc=Math.min(1,1600/Math.max(img.width,img.height));
+    const c=document.createElement("canvas"); c.width=Math.round(img.width*sc); c.height=Math.round(img.height*sc);
+    const x=c.getContext("2d"); x.drawImage(img,0,0,c.width,c.height);
+    const d=x.getImageData(0,0,c.width,c.height);
+    const r=window.jsQR?jsQR(d.data,c.width,c.height,{inversionAttempts:"attemptBoth"}):null;
+    if(!r){ hint.textContent="อ่าน QR ไม่ได้ ถ่ายใหม่ให้ QR อยู่กลางภาพและชัด หรือพิมพ์ Lot No. เอง"; }
+    else applyScan(r.data);
+  }catch(err){ hint.textContent="อ่านรูปไม่ได้ ลองถ่ายใหม่"; }
+  e.target.value="";
+});
+
+// รหัสเข้าใช้งาน
+$("#kSave").onclick=()=>{ ls.set("appKey",$("#kInput").value.trim()); $("#keyModal").classList.remove("on"); boot(); };
+$("#kInput").addEventListener("keydown",e=>{ if(e.key==="Enter") $("#kSave").click(); });
+
+$("#f-lot").addEventListener("focus",e=>{ try{e.target.select()}catch(_){} });
+
+/* ---------- views ---------- */
+function showView(v){
+  document.querySelectorAll("nav.tabs button").forEach(b=>b.setAttribute("aria-selected",b.dataset.v===v?"true":"false"));
+  document.querySelectorAll(".view").forEach(s=>s.classList.toggle("on",s.id==="v-"+v));
+  if(v==="all") loadAll();
+}
+document.querySelectorAll("nav.tabs button").forEach(b=>b.onclick=()=>showView(b.dataset.v));
+function setConn(ok){ $("#dot").className="dot "+(ok?"on":"off"); $("#connTxt").textContent=ok?"เชื่อมต่อ Google Sheet แล้ว":"เชื่อมต่อไม่ได้ ตรวจสอบอินเทอร์เน็ต"; }
+
+/* ---------- inputs ---------- */
+let lotTimer=null;
+$("#f-lot").addEventListener("input",()=>{ clearTimeout(lotTimer); lotTimer=setTimeout(watchLot,600); });
+$("#f-lot").addEventListener("change",watchLot);
+$("#f-model").addEventListener("input",()=>{ sel=null; renderSteps(); checkModel(); });
+$("#f-box").addEventListener("input",()=>{ renderSteps(); const q=boxBaseQty(); if(q&&!$("#f-qty").value) $("#f-qty").value=q; });
+$("#f-kg").addEventListener("input",updatePreview);
+$("#f-opid").addEventListener("input",()=>{ const o=OPS[$("#f-opid").value.trim()]; $("#opName").textContent=o?o[1]+" · "+o[2]:($("#f-opid").value?"ไม่พบรหัสนี้ในรายชื่อ (บันทึกได้)":""); });
+$("#recForm").addEventListener("submit",saveRec);
+
+/* ---------- boot ---------- */
+async function boot(){
+  try{
+    M=await api("getMaster"); tolPct=M.tolPct||1; setConn(true);
+  }catch(e){ setConn(false); $("#routeMsg").innerHTML='<div class="msg bad">โหลดข้อมูลหลักไม่ได้: '+esc(errTxt(e))+' — ตรวจว่ามีชีต Routing No., MC, Operator, Settings, Weigh_Log</div>'; return; }
+  M.op.forEach(o=>OPS[o[0]]=o);
+  $("#dl-model").innerHTML=Object.keys(M.routing).sort().map(m=>`<option value="${esc(m)}">`).join("");
+  const mcs=new Set(M.mc.map(r=>r[0])); Object.values(M.routing).forEach(a=>a.forEach(s=>mcs.add(mcFromWc(s[1]))));
+  $("#dl-mc").innerHTML=[...mcs].sort().map(m=>`<option value="${esc(m)}">`).join("");
+  $("#dl-op").innerHTML=M.op.map(o=>`<option value="${esc(o[0])}">${esc(o[1])} · ${esc(o[2])}</option>`).join("");
+  if(M.sheetUrl){ $("#sheetLink").href=M.sheetUrl; $("#sheetLink").hidden=false; }
+  const savedOp=ls.get("opId"); if(savedOp){ $("#f-opid").value=savedOp; $("#f-opid").dispatchEvent(new Event("input")); }
+  renderSteps();
+}
+boot();
+</script>
+</body>
+</html>
