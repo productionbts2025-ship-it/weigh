@@ -121,6 +121,9 @@ tr.void td{opacity:.45;text-decoration:line-through}
 .modal{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;padding:16px;z-index:20}
 .modal.on{display:flex}
 .modal .card{max-width:420px;width:100%}
+td.bx{white-space:normal;min-width:130px}
+td .chip{white-space:normal;line-height:1.3}
+a{color:var(--accent)}
 .scanner{position:fixed;inset:0;background:#000;z-index:30;display:none;flex-direction:column}
 .scanner.on{display:flex}
 .scanner video{flex:1;width:100%;min-height:0;object-fit:cover;background:#000}
@@ -146,6 +149,7 @@ tr.void td{opacity:.45;text-decoration:line-through}
     <button role="tab" id="t-rec" aria-selected="true" data-v="rec">บันทึกการชั่ง</button>
     <button role="tab" id="t-trk" aria-selected="false" data-v="trk">ติดตาม Lot</button>
     <button role="tab" id="t-all" aria-selected="false" data-v="all">Lot ล่าสุด</button>
+    <button role="tab" id="t-stk" aria-selected="false" data-v="stk">สรุป Stock</button>
   </nav>
 </header>
 
@@ -195,6 +199,18 @@ tr.void td{opacity:.45;text-decoration:line-through}
         <input id="f-box" inputmode="numeric" placeholder="1" required>
       </div>
     </div>
+    <div class="row">
+      <div class="fld">
+        <label for="f-prod">วันที่ผลิต (ตามป้าย)</label>
+        <input id="f-prod" type="date">
+      </div>
+      <div class="fld">
+        <label for="f-tol">Diff ที่ยอมรับ (±%)</label>
+        <input id="f-tol" class="num" inputmode="decimal" placeholder="1">
+        <span class="hint" id="tolHint"></span>
+      </div>
+    </div>
+    <div class="hint" id="prodHint" style="margin:-4px 0 10px;display:flex;gap:6px;flex-wrap:wrap;align-items:center"></div>
     <div class="row">
       <div class="fld">
         <label for="f-avg">น้ำหนักเฉลี่ย (g/ชิ้น)</label>
@@ -256,6 +272,16 @@ tr.void td{opacity:.45;text-decoration:line-through}
     </div>
     <div class="hint" id="allHint"></div>
     <div id="allOut"><div class="empty">กำลังโหลด…</div></div>
+  </div>
+</section>
+<section class="view" id="v-stk">
+  <div class="card">
+    <div class="toolbar">
+      <input id="stkFilter" placeholder="กรองตาม Lot / Model / กระบวนการ" aria-label="กรอง">
+      <label class="hint" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="stkDone" style="width:auto;min-height:0"> แสดงงานที่ Pack เสร็จแล้ว</label>
+      <button class="btn" id="stkRefresh" type="button">รีเฟรช</button>
+    </div>
+    <div id="stkOut"><div class="empty">กำลังโหลด…</div></div>
   </div>
 </section>
 </main>
@@ -346,50 +372,80 @@ function ord(r){ const o=parseInt(r.op,10); return (isNaN(o)?9990:o)*10+(r.pt===
 
 let canWrite=true;
 /* ---------- lot computations ---------- */
+// Box ถูกแยกด้วย "วันที่ผลิต + เลข Box" เพราะ Lot เดียวผลิตหลายวัน และเลข Box เริ่ม 1 ใหม่ทุกวัน
+const bkey=r=>(r.prod||"")+"#"+r.box;
+function dmy(p){ const m=/^(\d{4})-(\d\d)-(\d\d)$/.exec(p||""); return m?`${m[3]}/${m[2]}`:""; }
+function todayISO(){ const d=new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+function boxLbl(r){ return esc(r.box)+(r.prod?` <span class="hint">(${dmy(r.prod)})</span>`:""); }
+function curKey(){ const b=$("#f-box").value.trim(); return b?($("#f-prod").value||"")+"#"+b:""; }
+function tolOfModel(m){ const v=(M.tolM||{})[String(m||"").trim().toUpperCase()]; return v>0?v:tolPct; }
 function recsOf(doc){ if(!doc||!doc.recs) return []; return Object.entries(doc.recs).map(([id,r])=>({id,...r})); }
 function analyse(doc){
   const all=recsOf(doc); const live=all.filter(r=>!r.void);
-  const byBox={};
-  live.forEach(r=>{(byBox[r.box]=byBox[r.box]||[]).push(r)});
-  const calc={}; let flags=0;
+  const byBox={}, info={};
+  live.forEach(r=>{const k=bkey(r); (byBox[k]=byBox[k]||[]).push(r); info[k]={box:r.box,prod:r.prod||""};});
+  const calc={}; let flags=0; const mtol=tolOfModel(doc&&doc.model);
   Object.values(byBox).forEach(list=>{
     list.sort((a,b)=>ord(a)-ord(b)||a.ts-b.ts);
     let uw=null;
     list.forEach((r,i)=>{
       if(uw==null && r.qty>0 && r.kg>0) uw=r.kg/r.qty;
-      const c={est: r.avg>0 ? r.kg*1000/r.avg : (uw? r.kg/uw : null)};
+      const c={est: r.avg>0 ? r.kg*1000/r.avg : (uw? r.kg/uw : null), tol:r.tol>0?r.tol:mtol};
       if(i>0){ const p=list[i-1], pc=calc[p.id]||{}; c.prev=p; c.dKg=r.kg-p.kg; c.dPct=p.kg? c.dKg/p.kg*100 : null;
-        c.dPcs=(c.est!=null&&pc.est!=null)? c.est-pc.est : null; c.bad=c.dPct!=null && Math.abs(c.dPct)>tolPct; if(c.bad) flags++; }
+        c.dPcs=(c.est!=null&&pc.est!=null)? c.est-pc.est : null; c.bad=c.dPct!=null && Math.abs(c.dPct)>c.tol+1e-9; if(c.bad) flags++; }
       calc[r.id]=c;
     });
   });
-  // checkpoints: from routing plus any recorded ones
   const cps=new Map();
   const rt=routeOf(doc&&doc.model);
   if(rt) rt.forEach(s=>{ ["B","A"].forEach(pt=>cps.set(s[0]+":"+pt,{op:s[0],wc:s[1],sec:s[2],pt})) });
   live.forEach(r=>{const k=r.op+":"+r.pt; if(!cps.has(k)) cps.set(k,{op:r.op,wc:r.wc,sec:r.sec,pt:r.pt});});
   const cpList=[...cps.values()].sort((a,b)=>ord(a)-ord(b));
-  const boxes=Object.keys(byBox).sort((a,b)=>(parseFloat(a)||0)-(parseFloat(b)||0)||a.localeCompare(b));
-  return {all,live,byBox,calc,flags,cpList,boxes};
+  const boxes=Object.keys(byBox).sort((a,b)=>info[a].prod.localeCompare(info[b].prod)||(parseFloat(info[a].box)||0)-(parseFloat(info[b].box)||0)||a.localeCompare(b));
+  return {all,live,byBox,info,calc,flags,cpList,boxes,rt};
 }
 
-function renderLot(doc, target, opts={}){
+/* ---------- Stock Balance: Box อยู่ที่กระบวนการของการชั่งครั้งล่าสุด ---------- */
+function stockStatus(sec,pt,op,rt,done){
+  if(done) return {t:"Pack เสร็จแล้ว",c:"ok"};
+  const i=rt?rt.findIndex(s=>s[0]===op):-1, nx=(rt&&i>=0&&i<rt.length-1)?rt[i+1][1]:"";
+  if(sec==="SUP") return pt==="B"?{t:"อยู่ที่ Supplier",c:"warn"}:{t:"รับคืนแล้ว รอส่ง "+nx,c:""};
+  return pt==="B"?{t:"รับเข้าแล้ว กำลังทำ",c:"warn"}:{t:"ทำเสร็จ รอส่ง "+(nx||"ต่อ"),c:""};
+}
+function lotStock(A){
+  const g=new Map(), lastOp=A.rt&&A.rt.length?A.rt[A.rt.length-1][0]:null;
+  A.boxes.forEach(k=>{
+    const l=A.byBox[k], e=l[l.length-1], c=A.calc[e.id]||{};
+    const key=e.op+":"+e.pt;
+    const s=g.get(key)||{op:e.op,wc:e.wc,sec:e.sec,pt:e.pt,boxes:[],kg:0,pcs:0,est:false,done:lastOp&&e.op===lastOp&&e.pt==="A"};
+    s.boxes.push(e); s.kg+=e.kg; const p=e.qty||(c.est?Math.round(c.est):0); s.pcs+=p; if(!e.qty) s.est=true;
+    g.set(key,s);
+  });
+  return [...g.values()].sort((a,b)=>ord(a)-ord(b));
+}
+
+function renderLot(doc, target){
   if(!doc){ target.innerHTML='<div class="empty">ยังไม่มีการชั่งของ Lot นี้ — การบันทึกครั้งแรกจะสร้าง Lot ให้อัตโนมัติ</div>'; return; }
   const A=analyse(doc);
-  // keep only checkpoints that have data, unless compact=false
   const used=A.cpList.filter(cp=>A.live.some(r=>r.op===cp.op&&r.pt===cp.pt));
-  const rt=routeOf(doc.model);
+  const rt=A.rt;
   let h=`<div class="lothead"><span class="lot">${esc(doc.lot)}</span><span>Model <b>${esc(doc.model||"-")}</b></span>
     <span class="chip">${A.boxes.length} Box</span><span class="chip">${A.live.length} ครั้ง</span>
     ${A.flags?`<span class="chip bad">ผิดปกติ ${A.flags} จุด</span>`:(A.live.length?'<span class="chip ok">ปกติ</span>':'')}
-    <span class="hint">อัปเดต ${doc.updatedAt?nowTxt(doc.updatedAt):"-"}</span></div>`;
+    <span class="hint">อัปเดต ${doc.updatedAt?nowTxt(doc.updatedAt):"-"} · Diff ที่ยอมรับ ${tolOfModel(doc.model)}%</span></div>`;
   if(rt) h+=`<div class="flow">${rt.map(s=>`<span class="f">${esc(s[1])}</span>`).join("→")}</div>`;
   if(!A.live.length){ target.innerHTML=h+'<div class="empty">ยังไม่มีการชั่ง</div>'; return; }
+  // stock balance of this lot
+  const st=lotStock(A); let tb=0,tk=0,tp=0,te=false;
+  h+=`<h3>Stock Balance ของ Lot นี้ (ตอนนี้งานอยู่ที่ไหน)</h3><div class="tblwrap" style="margin-bottom:14px"><table><thead><tr><th>กระบวนการ</th><th>สถานะ</th><th>Box (วันผลิต)</th><th class="n">kg</th><th class="n">ชิ้น</th></tr></thead><tbody>`;
+  st.forEach(s=>{ const ss=stockStatus(s.sec,s.pt,s.op,rt,s.done); tb+=s.boxes.length; tk+=s.kg; tp+=s.pcs; te=te||s.est;
+    h+=`<tr><td><b>${esc(s.wc)}</b></td><td><span class="chip ${ss.c}">${esc(ss.t)}</span></td><td class="bx">${s.boxes.map(boxLbl).join(", ")}</td><td class="n num">${fmt(s.kg)}</td><td class="n num">${s.est?"≈":""}${fmtI(s.pcs)}</td></tr>`; });
+  h+=`</tbody><tfoot><tr><td>รวม</td><td></td><td>${tb} Box</td><td class="n num">${fmt(tk)}</td><td class="n num">${te?"≈":""}${fmtI(tp)}</td></tr></tfoot></table></div>`;
   // matrix
-  h+=`<h3>ตารางเทียบน้ำหนัก (kg) และจำนวนชิ้น ต่อ Box</h3><p class="hint" style="margin:-4px 0 8px">≈ = จำนวนชิ้นประมาณจากน้ำหนัก (เมื่อไม่ได้ใส่จำนวน)</p><div class="tblwrap"><table class="mx"><thead><tr><th>Box</th>${used.map(cp=>`<th class="cp">${esc(cp.wc)}<br><span style="font-weight:500">${ptShort(cp.sec,cp.pt)}</span></th>`).join("")}</tr></thead><tbody>`;
+  h+=`<h3>ตารางเทียบน้ำหนัก (kg) และจำนวนชิ้น ต่อ Box</h3><p class="hint" style="margin:-4px 0 8px">≈ = จำนวนชิ้นประมาณจากน้ำหนัก (เมื่อไม่ได้ใส่จำนวน) · (dd/mm) = วันที่ผลิตตามป้าย</p><div class="tblwrap"><table class="mx"><thead><tr><th>Box</th>${used.map(cp=>`<th class="cp">${esc(cp.wc)}<br><span style="font-weight:500">${ptShort(cp.sec,cp.pt)}</span></th>`).join("")}</tr></thead><tbody>`;
   const tot=used.map(()=>({kg:0,n:0,pcs:0,est:false}));
   A.boxes.forEach(b=>{
-    h+=`<tr><td><b>${esc(b)}</b></td>`;
+    h+=`<tr><td><b>${boxLbl(A.info[b])}</b></td>`;
     used.forEach((cp,j)=>{
       const rs=A.byBox[b].filter(r=>r.op===cp.op&&r.pt===cp.pt);
       if(!rs.length){ h+='<td class="cell">—</td>'; return; }
@@ -405,14 +461,31 @@ function renderLot(doc, target, opts={}){
   h+=`</tbody><tfoot><tr><td>รวม</td>${tot.map(t=>`<td class="cell">${fmt(t.kg)} kg<small>${t.n} Box</small><small class="pcs">${t.pcs?(t.est?"≈":"")+fmtI(t.pcs)+" ชิ้น":"— ชิ้น"}</small></td>`).join("")}</tr></tfoot></table></div>`;
   // detail
   const rows=[...A.all].sort((a,b)=>b.ts-a.ts);
-  h+=`<h3 style="margin-top:16px">ประวัติการชั่งทั้งหมด</h3><div class="tblwrap"><table><thead><tr><th>เวลา</th><th>Box</th><th>กระบวนการ</th><th>จุดชั่ง</th><th>เครื่อง</th><th>พนักงาน</th><th class="n">ชิ้น</th><th class="n">kg</th><th class="n">เฉลี่ย g/ชิ้น</th><th class="n">ต่างจากก่อนหน้า</th><th class="n">ชิ้น (ประมาณ)</th><th>หมายเหตุ</th><th></th></tr></thead><tbody>`;
+  h+=`<h3 style="margin-top:16px">ประวัติการชั่งทั้งหมด</h3><div class="tblwrap"><table><thead><tr><th>เวลา</th><th>Box</th><th>กระบวนการ</th><th>จุดชั่ง</th><th>เครื่อง</th><th>พนักงาน</th><th class="n">ชิ้น</th><th class="n">kg</th><th class="n">เฉลี่ย g/ชิ้น</th><th class="n">ต่างจากก่อนหน้า</th><th class="n">Diff ยอมรับ</th><th class="n">ชิ้น (ประมาณ)</th><th>หมายเหตุ</th><th></th></tr></thead><tbody>`;
   rows.forEach(r=>{
     const c=A.calc[r.id]||{}; const op=OPS[r.opId];
     const diff=r.void?"":(c.prev?`<span class="${c.bad?"down":""}">${sgn(c.dKg)} kg<br>${sgn(c.dPct,2)}%${c.dPcs!=null?` · ${c.dPcs>0?"+":""}${fmtI(c.dPcs)} ชิ้น`:""}</span>`:'<span class="hint">จุดแรก</span>');
-    h+=`<tr class="${r.void?"void":""}"><td>${nowTxt(r.ts)}</td><td>${esc(r.box)}</td><td>${esc(r.wc)}</td><td>${esc(ptLabel(r.sec,r.pt))}</td><td>${esc(r.mc)}</td><td>${esc(r.opId)}${op?`<br><span class="hint">${esc(op[1])}</span>`:""}</td><td class="n num">${r.qty?fmtI(r.qty):"—"}</td><td class="n num">${fmt(r.kg)}</td><td class="n num">${r.avg?fmt(r.avg,4):"—"}</td><td class="n num">${diff}</td><td class="n num">${r.void?"":fmtI(c.est)}</td><td style="white-space:normal;min-width:120px">${esc(r.note||"")}${r.void?`<br><span class="hint">ยกเลิก: ${esc(r.voidReason||"")}</span>`:""}</td><td>${(!r.void&&canWrite)?`<button class="btn sm" data-void="${esc(r.id)}" data-lot="${esc(lotKey(doc.lot))}">ยกเลิก</button>`:""}</td></tr>`;
+    h+=`<tr class="${r.void?"void":""}"><td>${nowTxt(r.ts)}</td><td>${boxLbl(r)}</td><td>${esc(r.wc)}</td><td>${esc(ptLabel(r.sec,r.pt))}</td><td>${esc(r.mc)}</td><td>${esc(r.opId)}${op?`<br><span class="hint">${esc(op[1])}</span>`:""}</td><td class="n num">${r.qty?fmtI(r.qty):"—"}</td><td class="n num">${fmt(r.kg)}</td><td class="n num">${r.avg?fmt(r.avg,4):"—"}</td><td class="n num">${diff}</td><td class="n num">${c.tol?c.tol+"%":"—"}</td><td class="n num">${r.void?"":fmtI(c.est)}</td><td style="white-space:normal;min-width:120px">${esc(r.note||"")}${r.void?`<br><span class="hint">ยกเลิก: ${esc(r.voidReason||"")}</span>`:""}</td><td>${(!r.void&&canWrite)?`<button class="btn sm" data-void="${esc(r.id)}" data-lot="${esc(lotKey(doc.lot))}">ยกเลิก</button>`:""}</td></tr>`;
   });
   h+="</tbody></table></div>";
   target.innerHTML=h;
+}
+
+/* ---------- วันที่ผลิต: จุดแรก = วันนี้, จุดถัดไป = วันผลิตของ Box นี้ที่ยังไม่ได้ชั่งที่จุดนี้ ---------- */
+let prodAuto=true;
+function suggestProd(rt){
+  const el=$("#prodHint"), box=$("#f-box").value.trim();
+  if(!box||!lotDoc){ if(prodAuto) $("#f-prod").value=todayISO(); el.innerHTML=""; return; }
+  const recs=recsOf(lotDoc).filter(r=>!r.void&&r.box===box);
+  const prods=[...new Set(recs.map(r=>r.prod||""))].filter(Boolean).sort();
+  const first=!sel||!rt||sel.op===rt[0][0];
+  const cand=prods.filter(p=>!recs.some(r=>r.prod===p&&sel&&r.op===sel.op&&r.pt===sel.pt) && (first||recs.some(r=>r.prod===p&&sel&&ord(r)<ord(sel))));
+  if(prodAuto){
+    if(first) $("#f-prod").value=todayISO();
+    else $("#f-prod").value=cand[0]||prods[prods.length-1]||todayISO();
+  }
+  const others=prods.filter(p=>p!==$("#f-prod").value);
+  el.innerHTML=prods.length>1||others.length?`Box ${esc(box)} ของ Lot นี้มีวันผลิต: `+prods.map(p=>`<button type="button" class="pt ${p===$("#f-prod").value?"sel":""}" data-prod="${p}">${dmy(p)}</button>`).join(" ")+` <span>เลือกให้ตรงวันที่บนป้าย</span>`:"";
 }
 
 /* ---------- record form ---------- */
@@ -422,44 +495,44 @@ function renderSteps(){
   const el=$("#steps");
   if(!model){ el.innerHTML='<div class="empty">สแกน QR หรือใส่ Model (ข้อ 4) เพื่อแสดงกระบวนการ</div>'; sel=null; return; }
   if(!rt){ el.innerHTML='<div class="msg warn">ไม่พบ Routing ของ Model นี้ในข้อมูลหลัก ตรวจสอบรหัส Model อีกครั้ง</div>'; sel=null; updatePreview(); return; }
-  // คงจุดชั่งของสถานีเดิมไว้ เมื่อสแกนป้ายใบใหม่
   if(sel && !rt.some(x=>x[0]===sel.op&&x[1]===sel.wc)) sel=null;
   if(!sel && station){ const st=rt.find(x=>x[1]===station.wc); if(st) sel={op:st[0],wc:st[1],sec:st[2],pt:station.pt}; }
-  const box=$("#f-box").value.trim();
+  suggestProd(rt);
+  const k=curKey();
   const A=lotDoc?analyse(lotDoc):null;
-  const done=new Set(A&&box&&A.byBox[box]?A.byBox[box].map(r=>r.op+":"+r.pt):[]);
-  // next expected: first checkpoint after the last done one
-  let lastOrd=-1; if(A&&box&&A.byBox[box]) A.byBox[box].forEach(r=>{lastOrd=Math.max(lastOrd,ord(r))});
+  const mine=A&&k&&A.byBox[k]?A.byBox[k]:[];
+  const done=new Set(mine.map(r=>r.op+":"+r.pt));
+  let lastOrd=-1; mine.forEach(r=>{lastOrd=Math.max(lastOrd,ord(r))});
   let next=null;
   rt.forEach(s=>["B","A"].forEach(pt=>{ if(!next && ord({op:s[0],pt})>lastOrd && !(s[0]===rt[0][0]&&pt==="B"&&lastOrd<0)) next=s[0]+":"+pt; }));
   if(lastOrd<0) next=rt[0][0]+":A";
-  if(!sel && next){ const [nop,npt]=next.split(":"); const st=rt.find(x=>x[0]===nop); if(st) sel={op:st[0],wc:st[1],sec:st[2],pt:npt}; }
+  if(!sel && next){ const [nop,npt]=next.split(":"); const st=rt.find(x=>x[0]===nop); if(st){ sel={op:st[0],wc:st[1],sec:st[2],pt:npt}; suggestProd(rt); } }
   if(sel && mcFor!==sel.wc){ $("#f-mc").value=mcFromWc(sel.wc); mcFor=sel.wc; }
   el.innerHTML=rt.map(s=>`<div class="step"><span class="op">${esc(s[0])}</span><span class="wc">${esc(s[1])}<span class="sec">${esc(s[2])}</span></span>
-    <div class="pts">${["B","A"].map(pt=>{const k=s[0]+":"+pt; const isSel=sel&&sel.op===s[0]&&sel.pt===pt;
-      return `<button type="button" class="pt ${done.has(k)?"done":""} ${isSel?"sel":""} ${k===next?"next":""}" data-op="${esc(s[0])}" data-pt="${pt}">${ptLabel(s[2],pt)}</button>`}).join("")}</div></div>`).join("")
+    <div class="pts">${["B","A"].map(pt=>{const kk=s[0]+":"+pt; const isSel=sel&&sel.op===s[0]&&sel.pt===pt;
+      return `<button type="button" class="pt ${done.has(kk)?"done":""} ${isSel?"sel":""} ${kk===next?"next":""}" data-op="${esc(s[0])}" data-pt="${pt}">${ptLabel(s[2],pt)}</button>`}).join("")}</div></div>`).join("")
     + `<div class="hint">ปุ่มขอบประจุดส้ม = จุดชั่งถัดไปที่ควรทำของ Box นี้ · ✓ = ชั่งแล้ว</div>`;
   updatePreview(); checkDup();
 }
-/* ---------- กันบันทึกซ้ำ: Lot + Box + จุดชั่งเดียวกัน บันทึกได้ครั้งเดียว ---------- */
+/* ---------- กันบันทึกซ้ำ: Lot + วันผลิต + Box + จุดชั่ง บันทึกได้ครั้งเดียว ---------- */
 function dupRec(){
-  const box=$("#f-box").value.trim(); if(!sel||!lotDoc||!box) return null;
-  return recsOf(lotDoc).find(r=>!r.void&&r.box===box&&r.op===sel.op&&r.pt===sel.pt)||null;
+  const box=$("#f-box").value.trim(), prod=$("#f-prod").value; if(!sel||!lotDoc||!box) return null;
+  return recsOf(lotDoc).find(r=>!r.void&&r.box===box&&(r.prod||"")===prod&&r.op===sel.op&&r.pt===sel.pt)||null;
 }
 function checkDup(){
   const d=dupRec(), el=$("#dupMsg"); if(!el) return;
-  el.innerHTML=d?`<div class="msg bad"><b>ห้ามบันทึกซ้ำ:</b> Box ${esc(d.box)} ชั่งที่ ${esc(d.wc)} ${ptShort(d.sec,d.pt)} แล้ว (${fmt(d.kg)} kg · ${nowTxt(d.ts)} · ${esc(d.opId)})<br>ถ้าเป็นป้ายใบอื่น ให้แก้เลข Box ให้ตรงป้าย · ถ้าต้องชั่งใหม่ ให้กด "ยกเลิก" รายการเดิมในตารางประวัติก่อน</div>`:"";
+  el.innerHTML=d?`<div class="msg bad"><b>ห้ามบันทึกซ้ำ:</b> Box ${esc(d.box)} (ผลิต ${dmy(d.prod)}) ชั่งที่ ${esc(d.wc)} ${ptShort(d.sec,d.pt)} แล้ว (${fmt(d.kg)} kg · ${nowTxt(d.ts)} · ${esc(d.opId)})<br>ถ้าเป็นป้ายของวันผลิตอื่น ให้แก้ "วันที่ผลิต" ให้ตรงป้าย · ถ้าต้องชั่งใหม่ ให้กด "ยกเลิก" รายการเดิมในตารางประวัติก่อน</div>`:"";
   $("#saveBtn").disabled=!!d||!canWrite;
 }
 function pickStep(op,pt){
   const rt=routeOf($("#f-model").value); const s=rt&&rt.find(x=>x[0]===op); if(!s) return;
   sel={op:s[0],wc:s[1],sec:s[2],pt};
   station={wc:s[1],pt}; ls.set("station",JSON.stringify(station));
-  mcFor=null;   // ให้ช่องชื่อเครื่องเปลี่ยนตามจุดชั่งที่เลือก
+  mcFor=null; prodAuto=true;
   renderSteps();
 }
 /* ---------- จำนวนชิ้น: ใช้ค่าจาก Box เดิม > QR > STD/Box แก้ได้เสมอ ---------- */
-let qtyAuto=true, lastQrQty=null, mcFor=null;
+let qtyAuto=true, lastQrQty=null, mcFor=null, tolAuto=true;
 function stdOf(m){ const v=(M.std||{})[String(m||"").trim().toUpperCase()]; return v>0?v:null; }
 function fillQty(){
   if(!(qtyAuto||!$("#f-qty").value)){ qtyNote(); return; }
@@ -472,21 +545,30 @@ function qtyNote(){
   if(!std){ el.innerHTML="ไม่มีค่า STD/Box ของ Model นี้ ใส่จำนวนเอง"; return; }
   el.innerHTML="STD/Box <b class=\"num\">"+fmtI(std)+"</b> ชิ้น"+(q&&q!==std?' · <span class="chip warn">Box เศษ</span>':"")+" · แก้ได้";
 }
+/* % Diff ที่ยอมรับ: ค่าของ Model (ชีต STD-BOX คอลัมน์ C) > Settings!B1 แก้ได้ */
+function fillTol(){
+  const m=$("#f-model").value, d=tolOfModel(m);
+  if(tolAuto||!$("#f-tol").value) { $("#f-tol").value=m?d:""; tolAuto=true; }
+  const v=parseFloat($("#f-tol").value);
+  $("#tolHint").textContent=m?((M.tolM||{})[m.trim().toUpperCase()]?"ค่าของ Model นี้ "+d+"%":"ค่ามาตรฐาน "+d+"%")+(v>0&&v!==d?" · แก้เป็น "+v+"%":"")+" · แก้ได้":"";
+}
+function curTol(){ const v=parseFloat($("#f-tol").value); return v>0?v:tolOfModel($("#f-model").value); }
 function boxBaseQty(){
-  const box=$("#f-box").value.trim(); if(!lotDoc||!box) return null;
-  const A=analyse(lotDoc); const l=A.byBox[box]; if(!l) return null;
+  const k=curKey(); if(!lotDoc||!k) return null;
+  const A=analyse(lotDoc); const l=A.byBox[k]; if(!l) return null;
   const withQ=l.filter(r=>r.qty>0); return withQ.length?withQ[0].qty:null;
 }
 function updatePreview(){
   const out=$("#preview"); const kg=parseFloat($("#f-kg").value);
-  const box=$("#f-box").value.trim();
-  if(!sel||!lotDoc||!box||!(kg>0)){ out.innerHTML=""; return; }
-  const A=analyse(lotDoc); const l=(A.byBox[box]||[]);
+  const k=curKey();
+  if(!sel||!lotDoc||!k||!(kg>0)){ out.innerHTML=""; return; }
+  const A=analyse(lotDoc); const l=(A.byBox[k]||[]);
   const myOrd=ord(sel); const before=l.filter(r=>ord(r)<=myOrd).sort((a,b)=>ord(a)-ord(b)||a.ts-b.ts);
   const p=before[before.length-1]; if(!p){ out.innerHTML=""; return; }
-  const d=kg-p.kg, pct=d/p.kg*100; const bad=Math.abs(pct)>tolPct;
+  const tol=curTol();
+  const d=kg-p.kg, pct=d/p.kg*100; const bad=Math.abs(pct)>tol+1e-9;
   const qtyRec=l.find(r=>r.qty>0&&r.kg>0); const uw=qtyRec?qtyRec.kg/qtyRec.qty:null;
-  out.innerHTML=`<div class="msg ${bad?"bad":"ok"}"><b>${bad?"น้ำหนักต่างเกินเกณฑ์ "+tolPct+"% — ตรวจนับก่อนบันทึก":"น้ำหนักอยู่ในเกณฑ์"}</b>
+  out.innerHTML=`<div class="msg ${bad?"bad":"ok"}"><b>${bad?"น้ำหนักต่างเกินเกณฑ์ "+tol+"% — ตรวจนับก่อนบันทึก":"น้ำหนักอยู่ในเกณฑ์ (ยอมรับ ±"+tol+"%)"}</b>
    <div class="result"><div><span>ก่อนหน้า (${esc(p.wc)} ${ptShort(p.sec,p.pt)})</span><b>${fmt(p.kg)}</b></div><div><span>ต่าง kg / %</span><b>${sgn(d)}<br>${sgn(pct,2)}%</b></div><div><span>ต่าง (ชิ้นโดยประมาณ)</span><b>${uw?(d>0?"+":"")+fmtI(d/uw):"—"}</b></div></div></div>`;
 }
 
@@ -497,7 +579,6 @@ function checkModel(){
 }
 
 
-
 /* ---------- lot loading (poll every 20 s while open) ---------- */
 async function loadLot(k){
   try{
@@ -506,6 +587,7 @@ async function loadLot(k){
     lotDoc=d; if(d&&d.tolPct) tolPct=d.tolPct;
     setTimeout(fillQty,0);
     if(lotDoc&&lotDoc.model&&!$("#f-model").value){ $("#f-model").value=lotDoc.model; }
+    fillTol();
     renderLot(lotDoc,$("#recLot")); renderSteps(); checkModel(); setConn(true);
   }catch(e){ setConn(false); if(curLot===k&&!lotDoc) $("#recLot").innerHTML='<div class="msg bad">อ่านข้อมูลไม่ได้: '+esc(errTxt(e))+'</div>'; }
 }
@@ -532,12 +614,12 @@ async function saveRec(ev){
   if(dupRec()){ checkDup(); return; }
   const btn=$("#saveBtn"); btn.disabled=true; btn.textContent="กำลังบันทึก…";
   try{
-    const r=await api("saveRecord",{lot,model,box,op:sel.op,wc:sel.wc,sec:sel.sec,pt:sel.pt,mc,opId,opName:OPS[opId]?OPS[opId][1]:"",kg,qty:qty>0?qty:"",avg:parseFloat($("#f-avg").value)>0?parseFloat($("#f-avg").value):"",note:$("#f-note").value.trim()});
+    const r=await api("saveRecord",{lot,model,box,op:sel.op,wc:sel.wc,sec:sel.sec,pt:sel.pt,mc,opId,opName:OPS[opId]?OPS[opId][1]:"",kg,qty:qty>0?qty:"",prod:$("#f-prod").value||todayISO(),tol:curTol(),avg:parseFloat($("#f-avg").value)>0?parseFloat($("#f-avg").value):"",note:$("#f-note").value.trim()});
     ls.set("opId",opId); ls.set("mc:"+sel.wc,mc);
     const bad=r.status==="ผิดปกติ";
-    msg.innerHTML=`<div class="msg ${bad?"bad":"ok"}">บันทึกแล้ว: Box ${esc(box)} · ${esc(sel.wc)} ${ptShort(sel.sec,sel.pt)} · <b class="num">${fmt(kg)} kg</b>${r.dKg!==""?` · ต่างจากก่อนหน้า ${sgn(r.dKg)} kg (${sgn(r.dPct,2)}%)`:""}${bad?"<br><b>เกินเกณฑ์ — แจ้งหัวหน้างานตรวจนับ</b>":""}</div>`;
+    msg.innerHTML=`<div class="msg ${bad?"bad":"ok"}">บันทึกแล้ว: Box ${esc(box)} (ผลิต ${dmy($("#f-prod").value)}) · ${esc(sel.wc)} ${ptShort(sel.sec,sel.pt)} · <b class="num">${fmt(kg)} kg</b>${r.dKg!==""?` · ต่างจากก่อนหน้า ${sgn(r.dKg)} kg (${sgn(r.dPct,2)}%)`:""}${bad?"<br><b>เกินเกณฑ์ — แจ้งหัวหน้างานตรวจนับ</b>":""}</div>`;
     $("#f-kg").value=""; $("#f-note").value=""; $("#f-avg").value=""; avgNote(); $("#preview").innerHTML="";
-    if(!$("#f-box").readOnly){ $("#f-box").value=""; } qtyAuto=true; $("#dupMsg").innerHTML=""; $("#saveBtn").disabled=!canWrite;
+    if(!$("#f-box").readOnly){ $("#f-box").value=""; } qtyAuto=true; prodAuto=true; $("#prodHint").innerHTML=""; $("#dupMsg").innerHTML=""; $("#saveBtn").disabled=!canWrite;
     curLot=null; watchLot();
     setTimeout(()=>{ $("#sec4").scrollIntoView({behavior:"smooth",block:"start"}); if(!$("#f-box").readOnly) $("#f-box").focus({preventScroll:true}); },50);
   }catch(e){
@@ -549,6 +631,7 @@ async function saveRec(ev){
 let pendingVoid=null;
 document.addEventListener("click",e=>{
   const b=e.target.closest("[data-void]"); if(b){ pendingVoid={id:b.dataset.void}; $("#mBody").textContent="รายการจะถูกขีดฆ่าและไม่นำไปเทียบน้ำหนัก แต่ยังเก็บประวัติไว้ใน Google Sheet"; $("#mReason").value=""; $("#modal").classList.add("on"); $("#mReason").focus(); return; }
+  const pd=e.target.closest("[data-prod]"); if(pd){ $("#f-prod").value=pd.dataset.prod; prodAuto=false; renderSteps(); qtyAuto=true; fillQty(); return; }
   const p=e.target.closest(".pt"); if(p){ pickStep(p.dataset.op,p.dataset.pt); return; }
   const l=e.target.closest("[data-open]"); if(l){ openTrack(l.dataset.open); }
 });
@@ -637,6 +720,7 @@ function applyScan(text){
   $("#f-lot").value=q.lot;
   $("#f-box").value=q.box||""; $("#f-box").readOnly=!!q.box;
   if(q.model) $("#f-model").value=q.model;
+  prodAuto=true; fillTol();
   if(q.qty) lastQrQty=q.qty;
   qtyAuto=true; fillQty();
   $("#scanInfo").innerHTML=`<div class="msg ${isNew?"info":"warn"}">${isNew?"ป้ายใหม่":"Lot เดิม (ป้าย Box ถัดไป)"}: <b class="num">${esc(q.lot)}</b>${q.box?` · Box <b>${esc(q.box)}</b> (จาก QR)`:" · <b>ใส่ Box ที่ ตามป้าย</b>"}${q.model?` · Model <b>${esc(q.model)}</b>`:""}${q.qty?` · <b class="num">${fmtI(q.qty)}</b> ชิ้น`:""}`
@@ -649,7 +733,7 @@ function applyScan(text){
 
 // ล้างข้อมูลป้าย (ใช้เมื่อสแกนผิด)
 function resetLabel(clearInfo=true){
-  qtyAuto=true; lastQrQty=null; $("#qtyHint").innerHTML=""; $("#f-box").readOnly=false; $("#dupMsg").innerHTML="";
+  qtyAuto=true; lastQrQty=null; tolAuto=true; prodAuto=true; $("#qtyHint").innerHTML=""; $("#tolHint").textContent=""; $("#prodHint").innerHTML=""; $("#f-tol").value=""; $("#f-box").readOnly=false; $("#dupMsg").innerHTML="";
   ["#f-lot","#f-model","#f-box","#f-kg","#f-qty","#f-note","#f-avg"].forEach(id=>$(id).value=""); avgNote();
   ["#preview","#saveMsg","#routeMsg"].forEach(id=>$(id).innerHTML="");
   if(clearInfo){ $("#scanInfo").innerHTML=""; $("#qrHint").textContent=""; }
@@ -745,11 +829,44 @@ $("#kInput").addEventListener("keydown",e=>{ if(e.key==="Enter") $("#kSave").cli
 
 $("#f-lot").addEventListener("focus",e=>{ try{e.target.select()}catch(_){} });
 
+/* ---------- สรุป Stock คงค้างของแต่ละกระบวนการ ---------- */
+let stkRows=[], stkAt=0;
+async function loadStock(){
+  $("#stkRefresh").disabled=true;
+  try{ const d=await api("getStock"); stkRows=d.rows||[]; stkAt=d.asOf; renderStock(); }
+  catch(e){ $("#stkOut").innerHTML='<div class="msg bad">อ่านข้อมูลไม่ได้: '+esc(errTxt(e))+'</div>'; }
+  $("#stkRefresh").disabled=false;
+}
+function renderStock(){
+  const q=$("#stkFilter").value.trim().toUpperCase(), showDone=$("#stkDone").checked;
+  const rows=stkRows.filter(r=>(showDone||!r.done)&&(!q||r.lot.toUpperCase().includes(q)||r.model.toUpperCase().includes(q)||r.wc.toUpperCase().includes(q)));
+  if(!rows.length){ $("#stkOut").innerHTML='<div class="empty">ไม่มี Stock คงค้าง'+(q?" ที่ตรงกับเงื่อนไข":"")+'</div>'; return; }
+  const g=new Map();
+  rows.forEach(r=>{ const k=r.done?"__done":r.wc; const x=g.get(k)||{wc:r.done?"Pack เสร็จแล้ว":r.wc,op:r.done?99999:parseInt(r.op,10)||9999,rows:[],box:0,kg:0,pcs:0,est:false,lots:new Set()};
+    x.rows.push(r); x.box+=r.boxes.length; x.kg+=r.kg; x.pcs+=r.pcs; x.est=x.est||r.est; x.lots.add(r.lot); x.op=Math.min(x.op,r.done?99999:parseInt(r.op,10)||9999); g.set(k,x); });
+  const groups=[...g.values()].sort((a,b)=>a.op-b.op||a.wc.localeCompare(b.wc));
+  const T={lots:new Set(rows.filter(r=>!r.done).map(r=>r.lot)).size,box:0,kg:0,pcs:0};
+  rows.filter(r=>!r.done).forEach(r=>{T.box+=r.boxes.length;T.kg+=r.kg;T.pcs+=r.pcs;});
+  let h=`<div class="lothead"><span class="lot">งานระหว่างผลิต (WIP)</span><span class="chip">${T.lots} Lot</span><span class="chip">${T.box} Box</span><span class="chip">${fmt(T.kg)} kg</span><span class="chip">≈${fmtI(T.pcs)} ชิ้น</span><span class="hint">ข้อมูล ณ ${nowTxt(stkAt)}</span></div>`;
+  h+=`<div class="tblwrap" style="margin-bottom:16px"><table><thead><tr><th>กระบวนการ</th><th class="n">Lot</th><th class="n">Box</th><th class="n">kg</th><th class="n">ชิ้น</th></tr></thead><tbody>`+
+     groups.map(x=>`<tr><td><a href="#stk-${esc(x.wc)}" data-jump="${esc(x.wc)}"><b>${esc(x.wc)}</b></a></td><td class="n num">${x.lots.size}</td><td class="n num">${x.box}</td><td class="n num">${fmt(x.kg)}</td><td class="n num">${x.est?"≈":""}${fmtI(x.pcs)}</td></tr>`).join("")+`</tbody></table></div>`;
+  groups.forEach(x=>{
+    h+=`<h3 id="stk-${esc(x.wc)}">${esc(x.wc)} <span class="hint">· ${x.lots.size} Lot · ${x.box} Box · ${fmt(x.kg)} kg · ${x.est?"≈":""}${fmtI(x.pcs)} ชิ้น</span></h3><div class="tblwrap" style="margin-bottom:14px"><table><thead><tr><th>Lot</th><th>Model</th><th>สถานะ</th><th>Box (วันผลิต)</th><th class="n">kg</th><th class="n">ชิ้น</th><th>อัปเดตล่าสุด</th></tr></thead><tbody>`+
+      x.rows.sort((a,b)=>a.last-b.last).map(r=>{ const ss=stockStatus(r.sec,r.pt,r.op,routeOf(r.model),r.done);
+        return `<tr><td><button class="btn sm" type="button" data-open="${esc(r.lot)}">${esc(r.lot)}</button></td><td>${esc(r.model)}</td><td><span class="chip ${ss.c}">${esc(ss.t)}</span></td><td class="bx">${r.boxes.map(boxLbl).join(", ")}</td><td class="n num">${fmt(r.kg)}</td><td class="n num">${r.est?"≈":""}${fmtI(r.pcs)}</td><td>${nowTxt(r.last)}</td></tr>`;}).join("")+`</tbody></table></div>`;
+  });
+  $("#stkOut").innerHTML=h;
+}
+$("#stkFilter").addEventListener("input",renderStock); $("#stkDone").addEventListener("change",renderStock);
+$("#stkRefresh").onclick=loadStock;
+document.addEventListener("click",e=>{ const j=e.target.closest("[data-jump]"); if(j){ e.preventDefault(); const t=document.getElementById("stk-"+j.dataset.jump); if(t) t.scrollIntoView({behavior:"smooth",block:"start"}); } });
+
 /* ---------- views ---------- */
 function showView(v){
   document.querySelectorAll("nav.tabs button").forEach(b=>b.setAttribute("aria-selected",b.dataset.v===v?"true":"false"));
   document.querySelectorAll(".view").forEach(s=>s.classList.toggle("on",s.id==="v-"+v));
   if(v==="all") loadAll();
+  if(v==="stk") loadStock();
 }
 document.querySelectorAll("nav.tabs button").forEach(b=>b.onclick=()=>showView(b.dataset.v));
 function setConn(ok){ $("#dot").className="dot "+(ok?"on":"off"); $("#connTxt").textContent=ok?"เชื่อมต่อ Google Sheet แล้ว":"เชื่อมต่อไม่ได้ ตรวจสอบอินเทอร์เน็ต"; }
@@ -758,8 +875,10 @@ function setConn(ok){ $("#dot").className="dot "+(ok?"on":"off"); $("#connTxt").
 let lotTimer=null;
 $("#f-lot").addEventListener("input",()=>{ clearTimeout(lotTimer); lotTimer=setTimeout(watchLot,600); });
 $("#f-lot").addEventListener("change",watchLot);
-$("#f-model").addEventListener("input",()=>{ sel=null; renderSteps(); checkModel(); fillQty(); });
-$("#f-box").addEventListener("input",()=>{ renderSteps(); qtyAuto=true; fillQty(); });
+$("#f-model").addEventListener("input",()=>{ sel=null; tolAuto=true; fillTol(); renderSteps(); checkModel(); fillQty(); });
+$("#f-box").addEventListener("input",()=>{ prodAuto=true; renderSteps(); qtyAuto=true; fillQty(); });
+$("#f-prod").addEventListener("change",()=>{ prodAuto=false; renderSteps(); qtyAuto=true; fillQty(); });
+$("#f-tol").addEventListener("input",()=>{ tolAuto=false; fillTol(); updatePreview(); });
 $("#f-qty").addEventListener("input",()=>{ qtyAuto=false; qtyNote(); });
 $("#f-kg").addEventListener("input",()=>{ updatePreview(); avgNote(); });
 $("#f-avg").addEventListener("input",avgNote);
