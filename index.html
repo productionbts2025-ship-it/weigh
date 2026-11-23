@@ -121,6 +121,8 @@ tr.void td{opacity:.45;text-decoration:line-through}
 .modal{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;padding:16px;z-index:20}
 .modal.on{display:flex}
 .modal .card{max-width:420px;width:100%}
+fieldset.box{border:1px solid var(--line);border-radius:8px;padding:8px 12px 2px;margin:0 0 10px;min-width:0}
+fieldset.box legend{font-size:13px;font-weight:600;color:var(--muted);padding:0 4px}
 td.bx{white-space:normal;min-width:130px}
 td .chip{white-space:normal;line-height:1.3}
 a{color:var(--accent)}
@@ -211,16 +213,43 @@ a{color:var(--accent)}
       </div>
     </div>
     <div class="hint" id="prodHint" style="margin:-4px 0 10px;display:flex;gap:6px;flex-wrap:wrap;align-items:center"></div>
-    <div class="row">
-      <div class="fld">
-        <label for="f-avg">น้ำหนักเฉลี่ย (g/ชิ้น)</label>
-        <input id="f-avg" class="num" inputmode="decimal" placeholder="เช่น 0.2880">
+    <fieldset class="box" id="sampleBox">
+      <legend>หาน้ำหนักเฉลี่ยต่อชิ้น (ชั่งตัวอย่าง)</legend>
+      <div class="row">
+        <div class="fld">
+          <label for="f-sq">จำนวนตัวอย่าง (ชิ้น)</label>
+          <input id="f-sq" class="num" inputmode="numeric" value="500">
+        </div>
+        <div class="fld">
+          <label for="f-skg">น้ำหนักตัวอย่าง (kg)</label>
+          <input id="f-skg" class="num" inputmode="decimal" placeholder="เช่น 0.144">
+        </div>
       </div>
-      <div class="fld" style="justify-content:flex-end"><span class="hint" id="avgHint">กระบวนการที่ 2 เป็นต้นไป ชั่งหาค่าเฉลี่ยใหม่แล้วใส่ที่นี่</span></div>
-    </div>
+      <div class="row">
+        <div class="fld">
+          <label for="f-avg">น้ำหนักเฉลี่ย (g/ชิ้น)</label>
+          <input id="f-avg" class="num" inputmode="decimal" placeholder="คำนวณให้อัตโนมัติ">
+        </div>
+        <div class="fld" style="justify-content:flex-end"><span class="hint" id="avgHint"></span></div>
+      </div>
+    </fieldset>
+    <label class="hint" style="display:flex;gap:6px;align-items:center;margin:0 0 8px"><input type="checkbox" id="f-tareOn" style="width:auto;min-height:0"> มีถุง / เม็ดกันชื้น (หักน้ำหนักบรรจุภัณฑ์)</label>
+    <fieldset class="box" id="tareBox" hidden>
+      <legend>หักน้ำหนักบรรจุภัณฑ์</legend>
+      <div class="row">
+        <div class="fld">
+          <label for="f-bag">น้ำหนักถุง (g)</label>
+          <input id="f-bag" class="num" inputmode="decimal" placeholder="0">
+        </div>
+        <div class="fld">
+          <label for="f-des">น้ำหนักเม็ดกันชื้น (g)</label>
+          <input id="f-des" class="num" inputmode="decimal" placeholder="0">
+        </div>
+      </div>
+    </fieldset>
     <div class="row">
       <div class="fld">
-        <label for="f-kg">น้ำหนัก (kg)</label>
+        <label for="f-kg" id="kgLabel">น้ำหนัก (kg)</label>
         <input id="f-kg" class="big" inputmode="decimal" placeholder="0.000" required>
       </div>
       <div class="fld">
@@ -229,6 +258,7 @@ a{color:var(--accent)}
         <span class="hint" id="qtyHint"></span>
       </div>
     </div>
+    <div id="netHint"></div>
     <div class="fld">
       <label for="f-note">หมายเหตุ</label>
       <input id="f-note" placeholder="ถ้ามี เช่น พบชิ้นงานเสีย 20 ชิ้น">
@@ -465,7 +495,7 @@ function renderLot(doc, target){
   rows.forEach(r=>{
     const c=A.calc[r.id]||{}; const op=OPS[r.opId];
     const diff=r.void?"":(c.prev?`<span class="${c.bad?"down":""}">${sgn(c.dKg)} kg<br>${sgn(c.dPct,2)}%${c.dPcs!=null?` · ${c.dPcs>0?"+":""}${fmtI(c.dPcs)} ชิ้น`:""}</span>`:'<span class="hint">จุดแรก</span>');
-    h+=`<tr class="${r.void?"void":""}"><td>${nowTxt(r.ts)}</td><td>${boxLbl(r)}</td><td>${esc(r.wc)}</td><td>${esc(ptLabel(r.sec,r.pt))}</td><td>${esc(r.mc)}</td><td>${esc(r.opId)}${op?`<br><span class="hint">${esc(op[1])}</span>`:""}</td><td class="n num">${r.qty?fmtI(r.qty):"—"}</td><td class="n num">${fmt(r.kg)}</td><td class="n num">${r.avg?fmt(r.avg,4):"—"}</td><td class="n num">${diff}</td><td class="n num">${c.tol?c.tol+"%":"—"}</td><td class="n num">${r.void?"":fmtI(c.est)}</td><td style="white-space:normal;min-width:120px">${esc(r.note||"")}${r.void?`<br><span class="hint">ยกเลิก: ${esc(r.voidReason||"")}</span>`:""}</td><td>${(!r.void&&canWrite)?`<button class="btn sm" data-void="${esc(r.id)}" data-lot="${esc(lotKey(doc.lot))}">ยกเลิก</button>`:""}</td></tr>`;
+    h+=`<tr class="${r.void?"void":""}"><td>${nowTxt(r.ts)}</td><td>${boxLbl(r)}</td><td>${esc(r.wc)}</td><td>${esc(ptLabel(r.sec,r.pt))}</td><td>${esc(r.mc)}</td><td>${esc(r.opId)}${op?`<br><span class="hint">${esc(op[1])}</span>`:""}</td><td class="n num">${r.qty?fmtI(r.qty):"—"}</td><td class="n num">${fmt(r.kg)}</td><td class="n num">${r.avg?fmt(r.avg,4):"—"}</td><td class="n num">${diff}</td><td class="n num">${c.tol?c.tol+"%":"—"}</td><td class="n num">${r.void?"":fmtI(c.est)}</td><td style="white-space:normal;min-width:120px">${r.gross?`<span class="hint">รวมถุง ${fmt(r.gross)} − ถุง ${fmtI(r.bag||0)} g − เม็ด ${fmtI(r.des||0)} g</span><br>`:""}${r.skg?`<span class="hint">ตัวอย่าง ${fmtI(r.sq)} ชิ้น = ${fmt(r.skg,4)} kg</span><br>`:""}${esc(r.note||"")}${r.void?`<br><span class="hint">ยกเลิก: ${esc(r.voidReason||"")}</span>`:""}</td><td>${(!r.void&&canWrite)?`<button class="btn sm" data-void="${esc(r.id)}" data-lot="${esc(lotKey(doc.lot))}">ยกเลิก</button>`:""}</td></tr>`;
   });
   h+="</tbody></table></div>";
   target.innerHTML=h;
@@ -512,7 +542,7 @@ function renderSteps(){
     <div class="pts">${["B","A"].map(pt=>{const kk=s[0]+":"+pt; const isSel=sel&&sel.op===s[0]&&sel.pt===pt;
       return `<button type="button" class="pt ${done.has(kk)?"done":""} ${isSel?"sel":""} ${kk===next?"next":""}" data-op="${esc(s[0])}" data-pt="${pt}">${ptLabel(s[2],pt)}</button>`}).join("")}</div></div>`).join("")
     + `<div class="hint">ปุ่มขอบประจุดส้ม = จุดชั่งถัดไปที่ควรทำของ Box นี้ · ✓ = ชั่งแล้ว</div>`;
-  updatePreview(); checkDup();
+  syncTare(); prefillAvg(); avgNote(); updatePreview(); checkDup();
 }
 /* ---------- กันบันทึกซ้ำ: Lot + วันผลิต + Box + จุดชั่ง บันทึกได้ครั้งเดียว ---------- */
 function dupRec(){
@@ -559,7 +589,7 @@ function boxBaseQty(){
   const withQ=l.filter(r=>r.qty>0); return withQ.length?withQ[0].qty:null;
 }
 function updatePreview(){
-  const out=$("#preview"); const kg=parseFloat($("#f-kg").value);
+  const out=$("#preview"); const kg=netKg();
   const k=curKey();
   if(!sel||!lotDoc||!k||!(kg>0)){ out.innerHTML=""; return; }
   const A=analyse(lotDoc); const l=(A.byBox[k]||[]);
@@ -604,7 +634,8 @@ async function saveRec(ev){
   ev.preventDefault();
   const msg=$("#saveMsg"); msg.innerHTML="";
   const lot=lotKey($("#f-lot").value), model=$("#f-model").value.trim().toUpperCase(), box=$("#f-box").value.trim();
-  const kg=parseFloat($("#f-kg").value), qty=parseInt(String($("#f-qty").value).replace(/,/g,""),10);
+  const kg=netKg(), qty=parseInt(String($("#f-qty").value).replace(/,/g,""),10);
+  if(tareOn()&&!(kg>0)){ msg.innerHTML='<div class="msg bad">น้ำหนักงานจริงหลังหักถุงและเม็ดกันชื้นต้องมากกว่า 0</div>'; return; }
   const mc=$("#f-mc").value.trim(), opId=$("#f-opid").value.trim();
   const err=[];
   if(!lot) err.push("Lot No."); if(!model) err.push("Model"); if(!box) err.push("Box"); if(!sel) err.push("จุดชั่ง");
@@ -614,11 +645,12 @@ async function saveRec(ev){
   if(dupRec()){ checkDup(); return; }
   const btn=$("#saveBtn"); btn.disabled=true; btn.textContent="กำลังบันทึก…";
   try{
-    const r=await api("saveRecord",{lot,model,box,op:sel.op,wc:sel.wc,sec:sel.sec,pt:sel.pt,mc,opId,opName:OPS[opId]?OPS[opId][1]:"",kg,qty:qty>0?qty:"",prod:$("#f-prod").value||todayISO(),tol:curTol(),avg:parseFloat($("#f-avg").value)>0?parseFloat($("#f-avg").value):"",note:$("#f-note").value.trim()});
+    const r=await api("saveRecord",{lot,model,box,op:sel.op,wc:sel.wc,sec:sel.sec,pt:sel.pt,mc,opId,opName:OPS[opId]?OPS[opId][1]:"",kg,qty:qty>0?qty:"",prod:$("#f-prod").value||todayISO(),tol:curTol(),avg:parseFloat($("#f-avg").value)>0?parseFloat($("#f-avg").value):"",sq:numv("#f-skg")>0?numv("#f-sq"):"",skg:numv("#f-skg")||"",gross:tareOn()?numv("#f-kg"):"",bag:tareOn()?numv("#f-bag"):"",des:tareOn()?numv("#f-des"):"",note:$("#f-note").value.trim()});
     ls.set("opId",opId); ls.set("mc:"+sel.wc,mc);
     const bad=r.status==="ผิดปกติ";
     msg.innerHTML=`<div class="msg ${bad?"bad":"ok"}">บันทึกแล้ว: Box ${esc(box)} (ผลิต ${dmy($("#f-prod").value)}) · ${esc(sel.wc)} ${ptShort(sel.sec,sel.pt)} · <b class="num">${fmt(kg)} kg</b>${r.dKg!==""?` · ต่างจากก่อนหน้า ${sgn(r.dKg)} kg (${sgn(r.dPct,2)}%)`:""}${bad?"<br><b>เกินเกณฑ์ — แจ้งหัวหน้างานตรวจนับ</b>":""}</div>`;
-    $("#f-kg").value=""; $("#f-note").value=""; $("#f-avg").value=""; avgNote(); $("#preview").innerHTML="";
+    if(tareOn()){ ls.set("tare:"+model,JSON.stringify({bag:$("#f-bag").value,des:$("#f-des").value})); }
+    $("#f-kg").value=""; $("#f-note").value=""; $("#f-avg").value=""; $("#f-skg").value=""; avgAuto=true; avgNote(); $("#netHint").innerHTML=""; $("#preview").innerHTML="";
     if(!$("#f-box").readOnly){ $("#f-box").value=""; } qtyAuto=true; prodAuto=true; $("#prodHint").innerHTML=""; $("#dupMsg").innerHTML=""; $("#saveBtn").disabled=!canWrite;
     curLot=null; watchLot();
     setTimeout(()=>{ $("#sec4").scrollIntoView({behavior:"smooth",block:"start"}); if(!$("#f-box").readOnly) $("#f-box").focus({preventScroll:true}); },50);
@@ -716,7 +748,7 @@ function applyScan(text){
   const prev=lotKey($("#f-lot").value);
   const isNew=q.lot!==prev;
   if(isNew){ resetLabel(false); }
-  else { ["#f-box","#f-kg","#f-note","#f-avg"].forEach(id=>$(id).value=""); avgNote(); ["#preview","#saveMsg"].forEach(id=>$(id).innerHTML=""); }
+  else { ["#f-box","#f-kg","#f-note","#f-avg","#f-skg"].forEach(id=>$(id).value=""); avgAuto=true; avgNote(); ["#preview","#saveMsg"].forEach(id=>$(id).innerHTML=""); }
   $("#f-lot").value=q.lot;
   $("#f-box").value=q.box||""; $("#f-box").readOnly=!!q.box;
   if(q.model) $("#f-model").value=q.model;
@@ -734,7 +766,7 @@ function applyScan(text){
 // ล้างข้อมูลป้าย (ใช้เมื่อสแกนผิด)
 function resetLabel(clearInfo=true){
   qtyAuto=true; lastQrQty=null; tolAuto=true; prodAuto=true; $("#qtyHint").innerHTML=""; $("#tolHint").textContent=""; $("#prodHint").innerHTML=""; $("#f-tol").value=""; $("#f-box").readOnly=false; $("#dupMsg").innerHTML="";
-  ["#f-lot","#f-model","#f-box","#f-kg","#f-qty","#f-note","#f-avg"].forEach(id=>$(id).value=""); avgNote();
+  ["#f-lot","#f-model","#f-box","#f-kg","#f-qty","#f-note","#f-avg","#f-skg"].forEach(id=>$(id).value=""); avgAuto=true; avgNote(); $("#netHint").innerHTML="";
   ["#preview","#saveMsg","#routeMsg"].forEach(id=>$(id).innerHTML="");
   if(clearInfo){ $("#scanInfo").innerHTML=""; $("#qrHint").textContent=""; }
   sel=null; curLot=null; lotDoc=null; clearInterval(lotPoll);
@@ -876,20 +908,49 @@ let lotTimer=null;
 $("#f-lot").addEventListener("input",()=>{ clearTimeout(lotTimer); lotTimer=setTimeout(watchLot,600); });
 $("#f-lot").addEventListener("change",watchLot);
 $("#f-model").addEventListener("input",()=>{ sel=null; tolAuto=true; fillTol(); renderSteps(); checkModel(); fillQty(); });
-$("#f-box").addEventListener("input",()=>{ prodAuto=true; renderSteps(); qtyAuto=true; fillQty(); });
+$("#f-box").addEventListener("input",()=>{ prodAuto=true; avgAuto=true; qtyAuto=true; fillQty(); renderSteps(); });
 $("#f-prod").addEventListener("change",()=>{ prodAuto=false; renderSteps(); qtyAuto=true; fillQty(); });
 $("#f-tol").addEventListener("input",()=>{ tolAuto=false; fillTol(); updatePreview(); });
 $("#f-qty").addEventListener("input",()=>{ qtyAuto=false; qtyNote(); });
-$("#f-kg").addEventListener("input",()=>{ updatePreview(); avgNote(); });
-$("#f-avg").addEventListener("input",avgNote);
-function avgNote(){
-  const kg=parseFloat($("#f-kg").value), avg=parseFloat($("#f-avg").value), el=$("#avgHint");
-  if(!(avg>0)){ el.textContent="กระบวนการที่ 2 เป็นต้นไป ชั่งหาค่าเฉลี่ยใหม่แล้วใส่ที่นี่"; return; }
-  if(!(kg>0)){ el.textContent="ใส่น้ำหนัก (kg) เพื่อคำนวณจำนวนชิ้น"; return; }
-  const pcs=Math.round(kg*1000/avg);
-  el.innerHTML='คำนวณได้ ≈ <b class="num">'+fmtI(pcs)+'</b> ชิ้น <button type="button" class="btn sm" id="useAvg">ใช้จำนวนนี้</button>';
-  $("#useAvg").onclick=()=>{ $("#f-qty").value=pcs; qtyAuto=false; qtyNote(); };
+/* ---------- น้ำหนักเฉลี่ย / หักถุง+เม็ดกันชื้น / คำนวณจำนวนชิ้น ---------- */
+let avgAuto=true;
+const numv=id=>{ const v=parseFloat(String($(id).value).replace(/,/g,"")); return isNaN(v)?0:v; };
+function tareOn(){ return $("#f-tareOn").checked; }
+function netKg(){ const g=numv("#f-kg"); if(!tareOn()) return g; return Math.round((g-(numv("#f-bag")+numv("#f-des"))/1000)*10000)/10000; }
+// ถุง+เม็ดกันชื้น: เปิดให้เองตอน "รับคืนจาก Supplier" และจำค่าล่าสุดของแต่ละ Model ไว้
+function syncTare(){
+  const want=!!(sel&&sel.sec==="SUP"&&sel.pt==="A");
+  if(tareFor!==(sel?sel.op+sel.pt:"")){ tareFor=sel?sel.op+sel.pt:""; $("#f-tareOn").checked=want;
+    if(want&&!$("#f-bag").value&&!$("#f-des").value){ try{ const t=JSON.parse(ls.get("tare:"+$("#f-model").value.trim().toUpperCase())||"null"); if(t){ $("#f-bag").value=t.bag||""; $("#f-des").value=t.des||""; } }catch(e){} } }
+  $("#tareBox").hidden=!tareOn();
+  $("#kgLabel").textContent=tareOn()?"น้ำหนักรวมที่ชั่ง รวมถุง (kg)":"น้ำหนัก (kg)";
 }
+let tareFor=null;
+// ค่าเฉลี่ยเดิม: ของ Box นี้ก่อน ถ้าไม่มีใช้ค่าล่าสุดของ Lot นี้ (แก้ได้ / ชั่งตัวอย่างใหม่ได้)
+function prefillAvg(){
+  if(!avgAuto||$("#f-skg").value||!lotDoc||!sel){ return; }
+  const all=recsOf(lotDoc).filter(r=>!r.void&&r.avg>0&&ord(r)<=ord(sel)).sort((a,b)=>b.ts-a.ts);
+  const k=curKey(); const r=all.find(x=>bkey(x)===k)||all[0];
+  $("#f-avg").value=r?r.avg:""; avgSrc=r?`ค่าเฉลี่ยเดิมจาก ${r.wc} Box ${r.box}${r.prod?" ("+dmy(r.prod)+")":""}`:"";
+}
+let avgSrc="";
+function avgNote(){
+  const sq=numv("#f-sq"), skg=numv("#f-skg");
+  if(sq>0&&skg>0){ $("#f-avg").value=Math.round(skg*1000/sq*10000)/10000; avgAuto=false; avgSrc=`จากตัวอย่าง ${fmtI(sq)} ชิ้น = ${fmt(skg,4)} kg`; }
+  const avg=numv("#f-avg"), kg=netKg(), el=$("#avgHint");
+  el.innerHTML=avg>0?`${esc(avgSrc||"ใส่เอง")}<br>1 ชิ้น = <b class="num">${fmt(avg,4)}</b> g`:"ชั่งงานตัวอย่าง (มาตรฐาน 500 ชิ้น) ระบบจะคำนวณให้";
+  // น้ำหนักงานจริง
+  if(tareOn()){ const g=numv("#f-kg"), t=numv("#f-bag")+numv("#f-des");
+    $("#netHint").innerHTML=g>0?`<div class="msg ${kg>0?"info":"bad"}">น้ำหนักงานจริง = ${fmt(g)} − ถุง ${fmt(numv("#f-bag")/1000)} − เม็ดกันชื้น ${fmt(numv("#f-des")/1000)} = <b class="num">${fmt(kg)} kg</b>${avg>0&&kg>0?` ≈ <b class="num">${fmtI(kg*1000/avg)}</b> ชิ้น`:""}</div>`:""; }
+  else $("#netHint").innerHTML=avg>0&&kg>0?`<div class="msg info">${fmt(kg)} kg ÷ ${fmt(avg,4)} g = <b class="num">${fmtI(kg*1000/avg)}</b> ชิ้น</div>`:"";
+  // จำนวนชิ้นจากน้ำหนัก (ถ้ายังไม่ได้แก้จำนวนเอง)
+  if(avg>0&&kg>0&&qtyAuto){ $("#f-qty").value=Math.round(kg*1000/avg); $("#qtyHint").innerHTML='คำนวณจากน้ำหนัก · แก้ได้'; }
+}
+$("#f-kg").addEventListener("input",()=>{ avgNote(); updatePreview(); });
+$("#f-avg").addEventListener("input",()=>{ avgAuto=false; $("#f-skg").value=""; avgSrc="ใส่เอง"; avgNote(); });
+["#f-sq","#f-skg"].forEach(id=>$(id).addEventListener("input",()=>{ avgNote(); updatePreview(); }));
+["#f-bag","#f-des"].forEach(id=>$(id).addEventListener("input",()=>{ avgNote(); updatePreview(); }));
+$("#f-tareOn").addEventListener("change",()=>{ syncTare(); avgNote(); updatePreview(); });
 $("#f-opid").addEventListener("input",()=>{ const o=OPS[$("#f-opid").value.trim()]; $("#opName").textContent=o?o[1]+" · "+o[2]:($("#f-opid").value?"ไม่พบรหัสนี้ในรายชื่อ (บันทึกได้)":""); });
 $("#recForm").addEventListener("submit",saveRec);
 
