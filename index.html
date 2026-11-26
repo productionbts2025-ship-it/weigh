@@ -122,6 +122,7 @@ tr.void td{opacity:.45;text-decoration:line-through}
 .modal{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;padding:16px;z-index:20}
 .modal.on{display:flex}
 .modal .card{max-width:420px;width:100%}
+.seg{display:grid;grid-template-columns:1fr 1fr;gap:8px}.seg .pt{justify-content:center;min-height:46px;font-size:15px;font-weight:600;border-radius:8px}
 fieldset.box{border:1px solid var(--line);border-radius:8px;padding:8px 12px 2px;margin:0 0 10px;min-width:0}
 fieldset.box legend{font-size:13px;font-weight:600;color:var(--muted);padding:0 4px}
 td.bx{white-space:normal;min-width:130px}
@@ -176,16 +177,33 @@ a{color:var(--accent)}
 
     <h2 style="margin-top:6px">2. จุดชั่ง (กระบวนการ)</h2>
     <fieldset class="box" id="customBox" hidden>
-      <legend>Lot <span id="customLot"></span> ไม่เป็นไปตาม Routing — กำหนดกระบวนการเอง</legend>
-      <div class="fld">
-        <label for="c-wc">เพิ่มกระบวนการ (เลือกจากรายการหรือพิมพ์เอง)</label>
-        <input id="c-wc" list="dl-wc" placeholder="เช่น BARREL-B006 หรือ REWORK-MP606">
+      <legend>Lot <span id="customLot"></span> ไม่เป็นไปตาม Routing — เลือกกระบวนการที่งานอยู่ตอนนี้</legend>
+      <div class="row">
+        <div class="fld">
+          <label for="c-sec">1) Section</label>
+          <select id="c-sec">
+            <option value="">— เลือก —</option>
+            <option value="FVI">FVI</option><option value="PD1">PD1</option><option value="PD2">PD2</option>
+            <option value="SUP">Supplier</option><option value="PACKING">Pack</option>
+            <option value="IQC">IQC</option><option value="OQC">OQC</option><option value="QC">QC</option>
+            <option value="QA">QA</option><option value="PC">PC</option>
+          </select>
+        </div>
+        <div class="fld">
+          <label for="c-wcSel" id="c-wcLabel">2) กระบวนการ</label>
+          <select id="c-wcSel" disabled><option value="">เลือก Section ก่อน</option></select>
+        </div>
       </div>
-      <div class="inline" style="margin-bottom:8px">
-        <select id="c-type" aria-label="ประเภท" style="flex:1"><option value="">ในโรงงาน</option><option value="SUP">ส่ง Supplier</option></select>
-        <button class="btn pri" id="c-add" type="button">เพิ่มกระบวนการ</button>
+      <div class="fld" hidden>
+        <label for="c-op">ลำดับขั้นตอน (ระบบตั้งให้ตามลำดับที่งานมาถึง)</label>
+        <select id="c-op"></select>
       </div>
-      <div class="hint" id="c-msg">กระบวนการจะถูกบันทึกเมื่อชั่งครั้งแรก · แต่ละกระบวนการชั่งรับเข้าและส่งออกได้เหมือนเดิม</div>
+      <div class="fld" id="c-otherFld" hidden>
+        <label for="c-wc">พิมพ์ชื่อกระบวนการ</label>
+        <input id="c-wc" placeholder="เช่น REWORK-MP606">
+      </div>
+      <button class="btn pri wide" id="c-add" type="button" style="min-height:48px;font-size:16px">3) ใช้กระบวนการนี้</button>
+      <div class="hint" id="c-msg" style="margin-top:6px">เลือกกระบวนการของสถานีที่ชั่งอยู่ตอนนี้ ไม่ต้องรู้ล่วงหน้าว่างานจะไปไหนต่อ · ★ = กระบวนการใน Routing ของ Model นี้</div>
     </fieldset>
     <div class="steps" id="steps"><div class="empty">สแกน QR หรือใส่ Model (ข้อ 4) เพื่อแสดงกระบวนการ</div></div>
 
@@ -204,6 +222,7 @@ a{color:var(--accent)}
 
     <h2 id="sec4">4. น้ำหนักจริง</h2>
     <div id="saveMsg"></div>
+    <div id="ptSwitch" style="margin-bottom:10px"></div>
     <div class="row">
       <div class="fld">
         <label for="f-model">Model (BTS Code)</label>
@@ -556,9 +575,9 @@ function renderSteps(){
   const lot=$("#f-lot").value, custom=isCustomLot(lot);
   const rt=routeFor(lot,model,lotDoc);
   const el=$("#steps");
-  if(custom){ $("#customBox").hidden=false; $("#customLot").textContent=lotKey(lot); } else $("#customBox").hidden=true;
+  if(custom){ $("#customBox").hidden=false; $("#customLot").textContent=lotKey(lot); fillOpOptions(); } else $("#customBox").hidden=true;
   if(!model&&!custom){ el.innerHTML='<div class="empty">สแกน QR หรือใส่ Model (ข้อ 4) เพื่อแสดงกระบวนการ</div>'; sel=null; return; }
-  if(custom&&!rt.length){ el.innerHTML='<div class="empty">Lot นี้ยังไม่มีกระบวนการ — เพิ่มกระบวนการด้านล่าง</div>'; sel=null; updatePreview(); checkDup(); return; }
+  if(custom&&!rt.length){ el.innerHTML='<div class="empty">Lot นี้ยังไม่มีกระบวนการ — เลือก Section และกระบวนการด้านบน แล้วกด "ใช้กระบวนการนี้"</div>'; sel=null; syncTare(); syncScrap(rt,custom); ptSwitch(); updatePreview(); checkDup(); return; }
   if(!rt){ el.innerHTML='<div class="msg warn">ไม่พบ Routing ของ Model นี้ในข้อมูลหลัก ตรวจสอบรหัส Model อีกครั้ง</div>'; sel=null; updatePreview(); return; }
   if(sel && !rt.some(x=>x[0]===sel.op&&x[1]===sel.wc)) sel=null;
   if(!sel && station){ const st=rt.find(x=>x[1]===station.wc); if(st) sel={op:st[0],wc:st[1],sec:st[2],pt:station.pt}; }
@@ -577,7 +596,7 @@ function renderSteps(){
     <div class="pts">${["B","A"].map(pt=>{const kk=s[0]+":"+pt; const isSel=sel&&sel.op===s[0]&&sel.pt===pt;
       return `<button type="button" class="pt ${done.has(kk)?"done":""} ${isSel?"sel":""} ${kk===next?"next":""}" data-op="${esc(s[0])}" data-pt="${pt}">${ptLabel(s[2],pt)}</button>`}).join("")}</div></div>`).join("")
     + `<div class="hint">ปุ่มขอบประจุดส้ม = จุดชั่งถัดไปที่ควรทำของ Box นี้ · ✓ = ชั่งแล้ว</div>`;
-  syncTare(); syncScrap(rt,custom); prefillAvg(); avgNote(); updatePreview(); checkDup();
+  syncTare(); syncScrap(rt,custom); ptSwitch(); prefillAvg(); avgNote(); updatePreview(); checkDup();
 }
 /* ---------- กันบันทึกซ้ำ: Lot + วันผลิต + Box + จุดชั่ง บันทึกได้ครั้งเดียว ---------- */
 function dupRec(){
@@ -938,18 +957,53 @@ function showView(v){
 document.querySelectorAll("nav.tabs button").forEach(b=>b.onclick=()=>showView(b.dataset.v));
 function setConn(ok){ $("#dot").className="dot "+(ok?"on":"off"); $("#connTxt").textContent=ok?"เชื่อมต่อ Google Sheet แล้ว":"เชื่อมต่อไม่ได้ ตรวจสอบอินเทอร์เน็ต"; }
 
-/* ---------- เพิ่มกระบวนการเอง (Lot PDRE) ---------- */
-$("#c-wc").addEventListener("input",()=>{ const w=$("#c-wc").value.trim().toUpperCase(); if(WC_SEC[w]) $("#c-type").value=WC_SEC[w]==="SUP"?"SUP":""; });
+/* ---------- เลือกกระบวนการเอง (Lot PDRE): Section -> กระบวนการ ---------- */
+function fillWcOptions(){
+  const sec=$("#c-sec").value, box=$("#c-wcSel"), lab=$("#c-wcLabel");
+  lab.textContent=sec==="SUP"?"2) Supplier ที่จะส่งไป":(["PD1","PD2","FVI"].includes(sec)?"2) หมายเลขเครื่องจักร / กระบวนการ":"2) กระบวนการ");
+  if(!sec){ box.innerHTML='<option value="">เลือก Section ก่อน</option>'; box.disabled=true; $("#c-otherFld").hidden=true; return; }
+  const mine=(routeOf($("#f-model").value)||[]).filter(x=>x[2]===sec).map(x=>x[1]);
+  let rest=[];
+  if(sec==="SUP"){
+    // ชื่อ Supplier (ตัดรหัส Model ท้ายชื่อออก) เช่น PLATE-TH METEC, BARREL-SOK
+    rest=[...new Set(Object.keys(WC_SEC).filter(w=>WC_SEC[w]==="SUP"||WC_SEC[w]==="PITCHTECH").map(w=>w.replace(/-P\d+$/,"")))];
+  } else {
+    rest=Object.keys(WC_SEC).filter(w=>WC_SEC[w]===sec);
+    if(sec==="PD1"){ // เครื่องจักรจากชีต MC
+      const have=new Set(rest.map(w=>mcFromWc(w)));
+      [...new Set(M.mc.map(r=>r[0]))].forEach(m=>{ if(!have.has(m)) rest.push((/^MF/i.test(m)?"FORMING-":"PRESS-")+m); });
+    }
+  }
+  const mineSet=new Set(mine), list=[...mine,...rest.filter(w=>!mineSet.has(w)).sort()];
+  if(!list.length) list.push(sec);
+  box.innerHTML=list.map(w=>`<option value="${esc(w)}">${mineSet.has(w)?"★ ":""}${esc(w)}</option>`).join("")+'<option value="__other">อื่นๆ (พิมพ์เอง)</option>';
+  box.disabled=false; $("#c-otherFld").hidden=box.value!=="__other";
+}
+$("#c-sec").addEventListener("change",fillWcOptions);
+// กระบวนการ No.: 10–200 ค่าเริ่มต้น = ลำดับถัดไปที่ยังว่าง, แสดงว่าลำดับไหนใช้แล้ว
+function fillOpOptions(){
+  const lot=$("#f-lot").value; if(!isCustomLot(lot)) return;
+  const rt=customRoute(lot,lotDoc), used={}; rt.forEach(x=>used[x[0]]=x[1]);
+  const nextOp=String((rt.length?Math.max(...rt.map(x=>parseInt(x[0],10)||0)):0)+10);
+  const cur=$("#c-op").value;
+  let h=""; for(let n=10;n<=200;n+=10){ const v=String(n); h+=`<option value="${v}">${v}${used[v]?" — "+esc(used[v]):""}</option>`; }
+  $("#c-op").innerHTML=h; $("#c-op").value=(cur&&!used[cur])?cur:(parseInt(nextOp,10)<=200?nextOp:"200");
+}
+$("#c-wcSel").addEventListener("change",()=>{ $("#c-otherFld").hidden=$("#c-wcSel").value!=="__other"; if(!$("#c-otherFld").hidden) $("#c-wc").focus(); });
 $("#c-add").onclick=()=>{
-  const lot=lotKey($("#f-lot").value), wc=$("#c-wc").value.trim().toUpperCase();
+  const lot=lotKey($("#f-lot").value), sec=$("#c-sec").value;
+  const wc=($("#c-wcSel").value==="__other"?$("#c-wc").value:$("#c-wcSel").value).trim().toUpperCase();
   if(!lot||!isCustomLot(lot)){ $("#c-msg").textContent="สแกนหรือใส่ Lot PDRE ก่อน"; return; }
-  if(!wc){ $("#c-wc").focus(); $("#c-msg").textContent="พิมพ์หรือเลือกชื่อกระบวนการ"; return; }
-  const rt=customRoute(lot,lotDoc);
-  const sec=$("#c-type").value==="SUP"?"SUP":(WC_SEC[wc]&&WC_SEC[wc]!=="SUP"?WC_SEC[wc]:"RW");
-  const op=String((rt.length?Math.max(...rt.map(x=>parseInt(x[0],10)||0)):0)+10);
+  if(!sec){ $("#c-sec").focus(); $("#c-msg").textContent="เลือก Section ก่อน"; return; }
+  if(!wc){ $("#c-wc").focus(); $("#c-msg").textContent="พิมพ์ชื่อกระบวนการ"; return; }
+  const rt=customRoute(lot,lotDoc), ex=rt.find(x=>x[1]===wc), op=$("#c-op").value;
+  if(ex){ $("#c-msg").textContent=wc+" มีอยู่แล้ว (No. "+ex[0]+") — เลือกให้แล้ว"; pickStep(ex[0],"B"); return; }
+  const taken=rt.find(x=>x[0]===op);
+  if(taken){ $("#c-msg").textContent="No. "+op+" ใช้กับ "+taken[1]+" แล้ว — เลือก No. อื่น"; $("#c-op").focus(); return; }
   (localSteps[lot]=localSteps[lot]||[]).push([op,wc,sec]);
-  $("#c-wc").value=""; $("#c-msg").textContent="เพิ่ม "+wc+" แล้ว (ลำดับ "+op+")";
+  $("#c-msg").textContent="เพิ่ม No. "+op+" "+wc+" แล้ว — กด รับเข้า หรือ ส่งออก แล้วใส่น้ำหนัก";
   pickStep(op,"B");
+  setTimeout(()=>$("#sec4").scrollIntoView({behavior:"smooth",block:"start"}),50);
 };
 
 /* ---------- inputs ---------- */
@@ -972,9 +1026,15 @@ function syncTare(){
   if(tareFor!==(sel?sel.op+sel.pt:"")){ tareFor=sel?sel.op+sel.pt:""; $("#f-tareOn").checked=want;
     if(want&&!$("#f-bag").value&&!$("#f-des").value){ try{ const t=JSON.parse(ls.get("tare:"+$("#f-model").value.trim().toUpperCase())||"null"); if(t){ $("#f-bag").value=t.bag||""; $("#f-des").value=t.des||""; } }catch(e){} } }
   $("#tareBox").hidden=!tareOn();
-  $("#kgLabel").textContent=tareOn()?"น้ำหนักรวมที่ชั่ง รวมถุง (kg)":"น้ำหนัก (kg)";
+  const base=!sel?"น้ำหนัก":sel.sec==="SUP"?(sel.pt==="B"?"น้ำหนักส่งไป Supplier":"น้ำหนักรับคืน"):(sel.pt==="B"?"น้ำหนักรับเข้า":"น้ำหนักส่งออก");
+  $("#kgLabel").textContent=base+(tareOn()?" รวมถุง (kg)":" (kg)");
 }
 let tareFor=null;
+// ปุ่มเลือก รับเข้า / ส่งออก ในหัวข้อ 4 (ตรงกับจุดชั่งที่เลือกในข้อ 2)
+function ptSwitch(){
+  const el=$("#ptSwitch"); if(!sel){ el.innerHTML='<div class="hint">เลือกจุดชั่งในข้อ 2 ก่อน</div>'; return; }
+  el.innerHTML=`<div class="hint" style="margin-bottom:4px">กำลังชั่งที่ <b>${esc(sel.wc)}</b></div><div class="seg">`+["B","A"].map(pt=>`<button type="button" class="pt ${sel.pt===pt?"sel":""}" data-op="${esc(sel.op)}" data-pt="${pt}">${ptLabel(sel.sec,pt)}</button>`).join("")+`</div>`;
+}
 // Scrap: แสดงที่ Press ส่งออก (จุดแรกของ Routing หรือกระบวนการที่ชื่อขึ้นต้น PRESS)
 function syncScrap(rt,custom){
   const on=!!(sel&&sel.pt==="A"&&(/^PRESS/i.test(sel.wc)||(!custom&&rt&&rt.length&&sel.op===rt[0][0])));
