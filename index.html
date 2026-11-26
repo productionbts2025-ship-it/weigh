@@ -35,6 +35,7 @@
   color-scheme:dark;
 }
 *{box-sizing:border-box}
+[hidden]{display:none!important}
 html,body{margin:0}
 body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:16px;line-height:1.5}
 .num{font-family:var(--f-num);font-variant-numeric:tabular-nums}
@@ -174,6 +175,18 @@ a{color:var(--accent)}
     <div id="routeMsg"></div>
 
     <h2 style="margin-top:6px">2. จุดชั่ง (กระบวนการ)</h2>
+    <fieldset class="box" id="customBox" hidden>
+      <legend>Lot <span id="customLot"></span> ไม่เป็นไปตาม Routing — กำหนดกระบวนการเอง</legend>
+      <div class="fld">
+        <label for="c-wc">เพิ่มกระบวนการ (เลือกจากรายการหรือพิมพ์เอง)</label>
+        <input id="c-wc" list="dl-wc" placeholder="เช่น BARREL-B006 หรือ REWORK-MP606">
+      </div>
+      <div class="inline" style="margin-bottom:8px">
+        <select id="c-type" aria-label="ประเภท" style="flex:1"><option value="">ในโรงงาน</option><option value="SUP">ส่ง Supplier</option></select>
+        <button class="btn pri" id="c-add" type="button">เพิ่มกระบวนการ</button>
+      </div>
+      <div class="hint" id="c-msg">กระบวนการจะถูกบันทึกเมื่อชั่งครั้งแรก · แต่ละกระบวนการชั่งรับเข้าและส่งออกได้เหมือนเดิม</div>
+    </fieldset>
     <div class="steps" id="steps"><div class="empty">สแกน QR หรือใส่ Model (ข้อ 4) เพื่อแสดงกระบวนการ</div></div>
 
     <h2>3. ผู้ชั่งและเครื่อง</h2>
@@ -259,6 +272,11 @@ a{color:var(--accent)}
       </div>
     </div>
     <div id="netHint"></div>
+    <div class="fld" id="scrapFld" hidden>
+      <label for="f-scrap">น้ำหนักเศษ Scrap หลังผลิต (kg)</label>
+      <input id="f-scrap" class="num" inputmode="decimal" placeholder="0.000">
+      <span class="hint">เก็บแยก ไม่รวมในน้ำหนักงาน</span>
+    </div>
     <div class="fld">
       <label for="f-note">หมายเหตุ</label>
       <input id="f-note" placeholder="ถ้ามี เช่น พบชิ้นงานเสีย 20 ชิ้น">
@@ -346,6 +364,7 @@ a{color:var(--accent)}
 
 <datalist id="dl-model"></datalist>
 <datalist id="dl-mc"></datalist>
+<datalist id="dl-wc"></datalist>
 <datalist id="dl-op"></datalist>
 
 <script>
@@ -396,6 +415,17 @@ let allLots=[];
 
 function mcFromWc(wc){ const i=wc.indexOf("-"); return i>0?wc.slice(i+1).trim():wc; }
 function routeOf(model){ return M.routing[String(model||"").trim().toUpperCase()]||null; }
+/* Lot ที่ไม่เป็นไปตาม Routing (ขึ้นต้น PDRE): พนักงานกำหนดกระบวนการเอง ทีละขั้น */
+const CUSTOM_LOT=/^PDRE/i;
+function isCustomLot(l){ return CUSTOM_LOT.test(String(l||"").trim()); }
+let localSteps={}, WC_SEC={};
+function customRoute(lot,doc){
+  const m=new Map();
+  recsOf(doc).filter(r=>!r.void).forEach(r=>{ if(!m.has(r.op)) m.set(r.op,[r.op,r.wc,r.sec]); });
+  (localSteps[lotKey(lot)]||[]).forEach(x=>{ if(!m.has(x[0])) m.set(x[0],x); });
+  return [...m.values()].sort((a,b)=>(parseInt(a[0],10)||0)-(parseInt(b[0],10)||0));
+}
+function routeFor(lot,model,doc){ return isCustomLot(lot)?customRoute(lot,doc):routeOf(model); }
 function ptLabel(sec,pt){ return sec==="SUP" ? (pt==="B"?"ส่งไป Supplier":"รับคืนจาก Supplier") : (pt==="B"?"รับเข้า (ก่อนทำ)":"ส่งออก (หลังทำ)"); }
 function ptShort(sec,pt){ return sec==="SUP" ? (pt==="B"?"ส่งไป":"รับคืน") : (pt==="B"?"รับเข้า":"ส่งออก"); }
 function ord(r){ const o=parseInt(r.op,10); return (isNaN(o)?9990:o)*10+(r.pt==="B"?0:1); }
@@ -427,12 +457,13 @@ function analyse(doc){
     });
   });
   const cps=new Map();
-  const rt=routeOf(doc&&doc.model);
+  const custom=isCustomLot(doc&&doc.lot);
+  const rt=routeFor(doc&&doc.lot,doc&&doc.model,doc);
   if(rt) rt.forEach(s=>{ ["B","A"].forEach(pt=>cps.set(s[0]+":"+pt,{op:s[0],wc:s[1],sec:s[2],pt})) });
   live.forEach(r=>{const k=r.op+":"+r.pt; if(!cps.has(k)) cps.set(k,{op:r.op,wc:r.wc,sec:r.sec,pt:r.pt});});
   const cpList=[...cps.values()].sort((a,b)=>ord(a)-ord(b));
   const boxes=Object.keys(byBox).sort((a,b)=>info[a].prod.localeCompare(info[b].prod)||(parseFloat(info[a].box)||0)-(parseFloat(info[b].box)||0)||a.localeCompare(b));
-  return {all,live,byBox,info,calc,flags,cpList,boxes,rt};
+  return {all,live,byBox,info,calc,flags,cpList,boxes,rt,custom};
 }
 
 /* ---------- Stock Balance: Box อยู่ที่กระบวนการของการชั่งครั้งล่าสุด ---------- */
@@ -443,7 +474,7 @@ function stockStatus(sec,pt,op,rt,done){
   return pt==="B"?{t:"รับเข้าแล้ว กำลังทำ",c:"warn"}:{t:"ทำเสร็จ รอส่ง "+(nx||"ต่อ"),c:""};
 }
 function lotStock(A){
-  const g=new Map(), lastOp=A.rt&&A.rt.length?A.rt[A.rt.length-1][0]:null;
+  const g=new Map(), lastOp=!A.custom&&A.rt&&A.rt.length?A.rt[A.rt.length-1][0]:null;
   A.boxes.forEach(k=>{
     const l=A.byBox[k], e=l[l.length-1], c=A.calc[e.id]||{};
     const key=e.op+":"+e.pt;
@@ -462,6 +493,7 @@ function renderLot(doc, target){
   let h=`<div class="lothead"><span class="lot">${esc(doc.lot)}</span><span>Model <b>${esc(doc.model||"-")}</b></span>
     <span class="chip">${A.boxes.length} Box</span><span class="chip">${A.live.length} ครั้ง</span>
     ${A.flags?`<span class="chip bad">ผิดปกติ ${A.flags} จุด</span>`:(A.live.length?'<span class="chip ok">ปกติ</span>':'')}
+    ${A.live.some(r=>r.scrap)?`<span class="chip warn">Scrap รวม ${fmt(A.live.reduce((t,r)=>t+(r.scrap||0),0))} kg</span>`:""}
     <span class="hint">อัปเดต ${doc.updatedAt?nowTxt(doc.updatedAt):"-"} · Diff ที่ยอมรับ ${tolOfModel(doc.model)}%</span></div>`;
   if(rt) h+=`<div class="flow">${rt.map(s=>`<span class="f">${esc(s[1])}</span>`).join("→")}</div>`;
   if(!A.live.length){ target.innerHTML=h+'<div class="empty">ยังไม่มีการชั่ง</div>'; return; }
@@ -484,7 +516,7 @@ function renderLot(doc, target){
       if(pcs){ tot[j].pcs+=pcs; if(!r.qty) tot[j].est=true; }
       const cls=c.prev?(c.bad?"bad":"ok"):"";
       const pcsTxt=pcs?`<small class="pcs">${r.qty?"":"≈"}${fmtI(pcs)} ชิ้น${c.prev&&c.dPcs!=null&&Math.round(c.dPcs)!==0?` (${c.dPcs>0?"+":""}${fmtI(c.dPcs)})`:""}</small>`:'<small class="pcs">— ชิ้น</small>';
-      h+=`<td class="cell ${cls}" title="${esc(r.mc)} · ${esc(r.opId)} · ${nowTxt(r.ts)}">${fmt(r.kg)} kg${c.prev?`<small>${sgn(c.dKg)} (${sgn(c.dPct,2)}%)</small>`:"<small>จุดแรก</small>"}${pcsTxt}${r.avg?`<small>เฉลี่ย ${fmt(r.avg,4)} g</small>`:""}</td>`;
+      h+=`<td class="cell ${cls}" title="${esc(r.mc)} · ${esc(r.opId)} · ${nowTxt(r.ts)}">${fmt(r.kg)} kg${c.prev?`<small>${sgn(c.dKg)} (${sgn(c.dPct,2)}%)</small>`:"<small>จุดแรก</small>"}${pcsTxt}${r.avg?`<small>เฉลี่ย ${fmt(r.avg,4)} g</small>`:""}${r.scrap?`<small>Scrap ${fmt(r.scrap)} kg</small>`:""}</td>`;
     });
     h+="</tr>";
   });
@@ -495,7 +527,7 @@ function renderLot(doc, target){
   rows.forEach(r=>{
     const c=A.calc[r.id]||{}; const op=OPS[r.opId];
     const diff=r.void?"":(c.prev?`<span class="${c.bad?"down":""}">${sgn(c.dKg)} kg<br>${sgn(c.dPct,2)}%${c.dPcs!=null?` · ${c.dPcs>0?"+":""}${fmtI(c.dPcs)} ชิ้น`:""}</span>`:'<span class="hint">จุดแรก</span>');
-    h+=`<tr class="${r.void?"void":""}"><td>${nowTxt(r.ts)}</td><td>${boxLbl(r)}</td><td>${esc(r.wc)}</td><td>${esc(ptLabel(r.sec,r.pt))}</td><td>${esc(r.mc)}</td><td>${esc(r.opId)}${op?`<br><span class="hint">${esc(op[1])}</span>`:""}</td><td class="n num">${r.qty?fmtI(r.qty):"—"}</td><td class="n num">${fmt(r.kg)}</td><td class="n num">${r.avg?fmt(r.avg,4):"—"}</td><td class="n num">${diff}</td><td class="n num">${c.tol?c.tol+"%":"—"}</td><td class="n num">${r.void?"":fmtI(c.est)}</td><td style="white-space:normal;min-width:120px">${r.gross?`<span class="hint">รวมถุง ${fmt(r.gross)} − ถุง ${fmtI(r.bag||0)} g − เม็ด ${fmtI(r.des||0)} g</span><br>`:""}${r.skg?`<span class="hint">ตัวอย่าง ${fmtI(r.sq)} ชิ้น = ${fmt(r.skg,4)} kg</span><br>`:""}${esc(r.note||"")}${r.void?`<br><span class="hint">ยกเลิก: ${esc(r.voidReason||"")}</span>`:""}</td><td>${(!r.void&&canWrite)?`<button class="btn sm" data-void="${esc(r.id)}" data-lot="${esc(lotKey(doc.lot))}">ยกเลิก</button>`:""}</td></tr>`;
+    h+=`<tr class="${r.void?"void":""}"><td>${nowTxt(r.ts)}</td><td>${boxLbl(r)}</td><td>${esc(r.wc)}</td><td>${esc(ptLabel(r.sec,r.pt))}</td><td>${esc(r.mc)}</td><td>${esc(r.opId)}${op?`<br><span class="hint">${esc(op[1])}</span>`:""}</td><td class="n num">${r.qty?fmtI(r.qty):"—"}</td><td class="n num">${fmt(r.kg)}</td><td class="n num">${r.avg?fmt(r.avg,4):"—"}</td><td class="n num">${diff}</td><td class="n num">${c.tol?c.tol+"%":"—"}</td><td class="n num">${r.void?"":fmtI(c.est)}</td><td style="white-space:normal;min-width:120px">${r.gross?`<span class="hint">รวมถุง ${fmt(r.gross)} − ถุง ${fmtI(r.bag||0)} g − เม็ด ${fmtI(r.des||0)} g</span><br>`:""}${r.scrap?`<span class="hint">Scrap ${fmt(r.scrap)} kg</span><br>`:""}${r.skg?`<span class="hint">ตัวอย่าง ${fmtI(r.sq)} ชิ้น = ${fmt(r.skg,4)} kg</span><br>`:""}${esc(r.note||"")}${r.void?`<br><span class="hint">ยกเลิก: ${esc(r.voidReason||"")}</span>`:""}</td><td>${(!r.void&&canWrite)?`<button class="btn sm" data-void="${esc(r.id)}" data-lot="${esc(lotKey(doc.lot))}">ยกเลิก</button>`:""}</td></tr>`;
   });
   h+="</tbody></table></div>";
   target.innerHTML=h;
@@ -521,9 +553,12 @@ function suggestProd(rt){
 /* ---------- record form ---------- */
 function renderSteps(){
   const model=$("#f-model").value.trim().toUpperCase();
-  const rt=routeOf(model);
+  const lot=$("#f-lot").value, custom=isCustomLot(lot);
+  const rt=routeFor(lot,model,lotDoc);
   const el=$("#steps");
-  if(!model){ el.innerHTML='<div class="empty">สแกน QR หรือใส่ Model (ข้อ 4) เพื่อแสดงกระบวนการ</div>'; sel=null; return; }
+  if(custom){ $("#customBox").hidden=false; $("#customLot").textContent=lotKey(lot); } else $("#customBox").hidden=true;
+  if(!model&&!custom){ el.innerHTML='<div class="empty">สแกน QR หรือใส่ Model (ข้อ 4) เพื่อแสดงกระบวนการ</div>'; sel=null; return; }
+  if(custom&&!rt.length){ el.innerHTML='<div class="empty">Lot นี้ยังไม่มีกระบวนการ — เพิ่มกระบวนการด้านล่าง</div>'; sel=null; updatePreview(); checkDup(); return; }
   if(!rt){ el.innerHTML='<div class="msg warn">ไม่พบ Routing ของ Model นี้ในข้อมูลหลัก ตรวจสอบรหัส Model อีกครั้ง</div>'; sel=null; updatePreview(); return; }
   if(sel && !rt.some(x=>x[0]===sel.op&&x[1]===sel.wc)) sel=null;
   if(!sel && station){ const st=rt.find(x=>x[1]===station.wc); if(st) sel={op:st[0],wc:st[1],sec:st[2],pt:station.pt}; }
@@ -534,15 +569,15 @@ function renderSteps(){
   const done=new Set(mine.map(r=>r.op+":"+r.pt));
   let lastOrd=-1; mine.forEach(r=>{lastOrd=Math.max(lastOrd,ord(r))});
   let next=null;
-  rt.forEach(s=>["B","A"].forEach(pt=>{ if(!next && ord({op:s[0],pt})>lastOrd && !(s[0]===rt[0][0]&&pt==="B"&&lastOrd<0)) next=s[0]+":"+pt; }));
-  if(lastOrd<0) next=rt[0][0]+":A";
+  rt.forEach(s=>["B","A"].forEach(pt=>{ if(!next && ord({op:s[0],pt})>lastOrd && (custom||!(s[0]===rt[0][0]&&pt==="B"&&lastOrd<0))) next=s[0]+":"+pt; }));
+  if(lastOrd<0) next=rt[0][0]+(custom?":B":":A");
   if(!sel && next){ const [nop,npt]=next.split(":"); const st=rt.find(x=>x[0]===nop); if(st){ sel={op:st[0],wc:st[1],sec:st[2],pt:npt}; suggestProd(rt); } }
   if(sel && mcFor!==sel.wc){ $("#f-mc").value=mcFromWc(sel.wc); mcFor=sel.wc; }
   el.innerHTML=rt.map(s=>`<div class="step"><span class="op">${esc(s[0])}</span><span class="wc">${esc(s[1])}<span class="sec">${esc(s[2])}</span></span>
     <div class="pts">${["B","A"].map(pt=>{const kk=s[0]+":"+pt; const isSel=sel&&sel.op===s[0]&&sel.pt===pt;
       return `<button type="button" class="pt ${done.has(kk)?"done":""} ${isSel?"sel":""} ${kk===next?"next":""}" data-op="${esc(s[0])}" data-pt="${pt}">${ptLabel(s[2],pt)}</button>`}).join("")}</div></div>`).join("")
     + `<div class="hint">ปุ่มขอบประจุดส้ม = จุดชั่งถัดไปที่ควรทำของ Box นี้ · ✓ = ชั่งแล้ว</div>`;
-  syncTare(); prefillAvg(); avgNote(); updatePreview(); checkDup();
+  syncTare(); syncScrap(rt,custom); prefillAvg(); avgNote(); updatePreview(); checkDup();
 }
 /* ---------- กันบันทึกซ้ำ: Lot + วันผลิต + Box + จุดชั่ง บันทึกได้ครั้งเดียว ---------- */
 function dupRec(){
@@ -555,7 +590,7 @@ function checkDup(){
   $("#saveBtn").disabled=!!d||!canWrite;
 }
 function pickStep(op,pt){
-  const rt=routeOf($("#f-model").value); const s=rt&&rt.find(x=>x[0]===op); if(!s) return;
+  const rt=routeFor($("#f-lot").value,$("#f-model").value,lotDoc); const s=rt&&rt.find(x=>x[0]===op); if(!s) return;
   sel={op:s[0],wc:s[1],sec:s[2],pt};
   station={wc:s[1],pt}; ls.set("station",JSON.stringify(station));
   mcFor=null; prodAuto=true;
@@ -645,12 +680,12 @@ async function saveRec(ev){
   if(dupRec()){ checkDup(); return; }
   const btn=$("#saveBtn"); btn.disabled=true; btn.textContent="กำลังบันทึก…";
   try{
-    const r=await api("saveRecord",{lot,model,box,op:sel.op,wc:sel.wc,sec:sel.sec,pt:sel.pt,mc,opId,opName:OPS[opId]?OPS[opId][1]:"",kg,qty:qty>0?qty:"",prod:$("#f-prod").value||todayISO(),tol:curTol(),avg:parseFloat($("#f-avg").value)>0?parseFloat($("#f-avg").value):"",sq:numv("#f-skg")>0?numv("#f-sq"):"",skg:numv("#f-skg")||"",gross:tareOn()?numv("#f-kg"):"",bag:tareOn()?numv("#f-bag"):"",des:tareOn()?numv("#f-des"):"",note:$("#f-note").value.trim()});
+    const r=await api("saveRecord",{lot,model,box,op:sel.op,wc:sel.wc,sec:sel.sec,pt:sel.pt,mc,opId,opName:OPS[opId]?OPS[opId][1]:"",kg,qty:qty>0?qty:"",prod:$("#f-prod").value||todayISO(),tol:curTol(),avg:parseFloat($("#f-avg").value)>0?parseFloat($("#f-avg").value):"",sq:numv("#f-skg")>0?numv("#f-sq"):"",scrap:$("#scrapFld").hidden?"":(numv("#f-scrap")||""),skg:numv("#f-skg")||"",gross:tareOn()?numv("#f-kg"):"",bag:tareOn()?numv("#f-bag"):"",des:tareOn()?numv("#f-des"):"",note:$("#f-note").value.trim()});
     ls.set("opId",opId); ls.set("mc:"+sel.wc,mc);
     const bad=r.status==="ผิดปกติ";
     msg.innerHTML=`<div class="msg ${bad?"bad":"ok"}">บันทึกแล้ว: Box ${esc(box)} (ผลิต ${dmy($("#f-prod").value)}) · ${esc(sel.wc)} ${ptShort(sel.sec,sel.pt)} · <b class="num">${fmt(kg)} kg</b>${r.dKg!==""?` · ต่างจากก่อนหน้า ${sgn(r.dKg)} kg (${sgn(r.dPct,2)}%)`:""}${bad?"<br><b>เกินเกณฑ์ — แจ้งหัวหน้างานตรวจนับ</b>":""}</div>`;
     if(tareOn()){ ls.set("tare:"+model,JSON.stringify({bag:$("#f-bag").value,des:$("#f-des").value})); }
-    $("#f-kg").value=""; $("#f-note").value=""; $("#f-avg").value=""; $("#f-skg").value=""; avgAuto=true; avgNote(); $("#netHint").innerHTML=""; $("#preview").innerHTML="";
+    $("#f-kg").value=""; $("#f-note").value=""; $("#f-avg").value=""; $("#f-skg").value=""; $("#f-scrap").value=""; avgAuto=true; avgNote(); $("#netHint").innerHTML=""; $("#preview").innerHTML="";
     if(!$("#f-box").readOnly){ $("#f-box").value=""; } qtyAuto=true; prodAuto=true; $("#prodHint").innerHTML=""; $("#dupMsg").innerHTML=""; $("#saveBtn").disabled=!canWrite;
     curLot=null; watchLot();
     setTimeout(()=>{ $("#sec4").scrollIntoView({behavior:"smooth",block:"start"}); if(!$("#f-box").readOnly) $("#f-box").focus({preventScroll:true}); },50);
@@ -731,7 +766,7 @@ const scanCanvas=document.createElement("canvas");
 
 function parseQR(text){
   const t=String(text||"").trim();
-  const lotM=t.match(/PDR-?\d{6,}/i);
+  const lotM=t.match(/(?:PDRE|PDPM|PDR|PDT|PDN)-?\d{4,}/i);
   const modM=Object.keys(M.routing).sort((a,b)=>b.length-a.length)
     .find(m=>new RegExp("(^|[^A-Z0-9])"+m.replace(/[-]/g,"\\-")+"([^A-Z0-9-]|$)","i").test(t));
   const parts=t.split(/[,;|\t]+/).map(x=>x.trim()).filter(Boolean);
@@ -884,7 +919,7 @@ function renderStock(){
      groups.map(x=>`<tr><td><a href="#stk-${esc(x.wc)}" data-jump="${esc(x.wc)}"><b>${esc(x.wc)}</b></a></td><td class="n num">${x.lots.size}</td><td class="n num">${x.box}</td><td class="n num">${fmt(x.kg)}</td><td class="n num">${x.est?"≈":""}${fmtI(x.pcs)}</td></tr>`).join("")+`</tbody></table></div>`;
   groups.forEach(x=>{
     h+=`<h3 id="stk-${esc(x.wc)}">${esc(x.wc)} <span class="hint">· ${x.lots.size} Lot · ${x.box} Box · ${fmt(x.kg)} kg · ${x.est?"≈":""}${fmtI(x.pcs)} ชิ้น</span></h3><div class="tblwrap" style="margin-bottom:14px"><table><thead><tr><th>Lot</th><th>Model</th><th>สถานะ</th><th>Box (วันผลิต)</th><th class="n">kg</th><th class="n">ชิ้น</th><th>อัปเดตล่าสุด</th></tr></thead><tbody>`+
-      x.rows.sort((a,b)=>a.last-b.last).map(r=>{ const ss=stockStatus(r.sec,r.pt,r.op,routeOf(r.model),r.done);
+      x.rows.sort((a,b)=>a.last-b.last).map(r=>{ const ss=stockStatus(r.sec,r.pt,r.op,isCustomLot(r.lot)?null:routeOf(r.model),r.done);
         return `<tr><td><button class="btn sm" type="button" data-open="${esc(r.lot)}">${esc(r.lot)}</button></td><td>${esc(r.model)}</td><td><span class="chip ${ss.c}">${esc(ss.t)}</span></td><td class="bx">${r.boxes.map(boxLbl).join(", ")}</td><td class="n num">${fmt(r.kg)}</td><td class="n num">${r.est?"≈":""}${fmtI(r.pcs)}</td><td>${nowTxt(r.last)}</td></tr>`;}).join("")+`</tbody></table></div>`;
   });
   $("#stkOut").innerHTML=h;
@@ -903,10 +938,24 @@ function showView(v){
 document.querySelectorAll("nav.tabs button").forEach(b=>b.onclick=()=>showView(b.dataset.v));
 function setConn(ok){ $("#dot").className="dot "+(ok?"on":"off"); $("#connTxt").textContent=ok?"เชื่อมต่อ Google Sheet แล้ว":"เชื่อมต่อไม่ได้ ตรวจสอบอินเทอร์เน็ต"; }
 
+/* ---------- เพิ่มกระบวนการเอง (Lot PDRE) ---------- */
+$("#c-wc").addEventListener("input",()=>{ const w=$("#c-wc").value.trim().toUpperCase(); if(WC_SEC[w]) $("#c-type").value=WC_SEC[w]==="SUP"?"SUP":""; });
+$("#c-add").onclick=()=>{
+  const lot=lotKey($("#f-lot").value), wc=$("#c-wc").value.trim().toUpperCase();
+  if(!lot||!isCustomLot(lot)){ $("#c-msg").textContent="สแกนหรือใส่ Lot PDRE ก่อน"; return; }
+  if(!wc){ $("#c-wc").focus(); $("#c-msg").textContent="พิมพ์หรือเลือกชื่อกระบวนการ"; return; }
+  const rt=customRoute(lot,lotDoc);
+  const sec=$("#c-type").value==="SUP"?"SUP":(WC_SEC[wc]&&WC_SEC[wc]!=="SUP"?WC_SEC[wc]:"RW");
+  const op=String((rt.length?Math.max(...rt.map(x=>parseInt(x[0],10)||0)):0)+10);
+  (localSteps[lot]=localSteps[lot]||[]).push([op,wc,sec]);
+  $("#c-wc").value=""; $("#c-msg").textContent="เพิ่ม "+wc+" แล้ว (ลำดับ "+op+")";
+  pickStep(op,"B");
+};
+
 /* ---------- inputs ---------- */
 let lotTimer=null;
 $("#f-lot").addEventListener("input",()=>{ clearTimeout(lotTimer); lotTimer=setTimeout(watchLot,600); });
-$("#f-lot").addEventListener("change",watchLot);
+$("#f-lot").addEventListener("change",()=>{ watchLot(); renderSteps(); });
 $("#f-model").addEventListener("input",()=>{ sel=null; tolAuto=true; fillTol(); renderSteps(); checkModel(); fillQty(); });
 $("#f-box").addEventListener("input",()=>{ prodAuto=true; avgAuto=true; qtyAuto=true; fillQty(); renderSteps(); });
 $("#f-prod").addEventListener("change",()=>{ prodAuto=false; renderSteps(); qtyAuto=true; fillQty(); });
@@ -926,6 +975,11 @@ function syncTare(){
   $("#kgLabel").textContent=tareOn()?"น้ำหนักรวมที่ชั่ง รวมถุง (kg)":"น้ำหนัก (kg)";
 }
 let tareFor=null;
+// Scrap: แสดงที่ Press ส่งออก (จุดแรกของ Routing หรือกระบวนการที่ชื่อขึ้นต้น PRESS)
+function syncScrap(rt,custom){
+  const on=!!(sel&&sel.pt==="A"&&(/^PRESS/i.test(sel.wc)||(!custom&&rt&&rt.length&&sel.op===rt[0][0])));
+  $("#scrapFld").hidden=!on; if(!on) $("#f-scrap").value="";
+}
 // ค่าเฉลี่ยเดิม: ของ Box นี้ก่อน ถ้าไม่มีใช้ค่าล่าสุดของ Lot นี้ (แก้ได้ / ชั่งตัวอย่างใหม่ได้)
 function prefillAvg(){
   if(!avgAuto||$("#f-skg").value||!lotDoc||!sel){ return; }
@@ -966,6 +1020,8 @@ async function boot(){
     } else $("#routeMsg").innerHTML='<div class="msg bad">โหลดข้อมูลหลักไม่ได้: '+esc(m)+'</div>';
     return; }
   M.op.forEach(o=>OPS[o[0]]=o);
+  WC_SEC={}; Object.values(M.routing).forEach(a=>a.forEach(x=>{ if(x[1]&&!WC_SEC[x[1].toUpperCase()]) WC_SEC[x[1].toUpperCase()]=x[2]; }));
+  $("#dl-wc").innerHTML=Object.keys(WC_SEC).sort().map(w=>`<option value="${esc(w)}">`).join("");
   $("#dl-model").innerHTML=Object.keys(M.routing).sort().map(m=>`<option value="${esc(m)}">`).join("");
   const mcs=new Set(M.mc.map(r=>r[0])); Object.values(M.routing).forEach(a=>a.forEach(s=>mcs.add(mcFromWc(s[1]))));
   $("#dl-mc").innerHTML=[...mcs].sort().map(m=>`<option value="${esc(m)}">`).join("");
